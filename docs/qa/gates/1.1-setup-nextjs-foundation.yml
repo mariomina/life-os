@@ -1,0 +1,127 @@
+schema: 1
+story: '1.1'
+story_title: 'Setup proyecto (Next.js 16 + TailAdmin + Tailwind v4 + TypeScript + shadcn/ui)'
+gate: CONCERNS
+status_reason: >
+  Todos los 10 ACs están implementados y verificados. El tooling (TypeScript strict, ESLint,
+  Prettier, Husky, shadcn/ui) es correcto. Se identificó un concern MEDIUM: el sidebar no
+  colapsa visualmente en desktop (xl+) cuando isOpen=false — la clase 'xl:w-64' siempre
+  mantiene el ancho completo en pantallas grandes. Para una story de foundation/setup con
+  placeholder content el impacto es bajo, pero debe corregirse antes de iterar sobre el layout.
+reviewer: 'Quinn (Test Architect)'
+updated: '2026-02-20T00:00:00Z'
+
+top_issues:
+  - id: CONCERN-01
+    severity: medium
+    category: ui-behavior
+    description: >
+      Sidebar no colapsa en desktop (xl+). En Sidebar.tsx línea 61,
+      la clase 'xl:w-64' en el estado isOpen=false garantiza que el sidebar
+      siempre ocupe 64 unidades en pantallas xl+, independientemente del toggle.
+      El ChevronLeft no tiene efecto visual en desktop.
+    file: components/layout/Sidebar.tsx
+    line: 61
+    recommendation: >
+      Cambiar 'w-0 flex xl:w-64' por 'w-0' cuando isOpen=false para que el
+      collapse funcione en todos los breakpoints. Ajustar la lógica de margen
+      en AppLayout si se desea siempre-visible en desktop (xl:ml-64 siempre).
+    suggested_owner: dev
+
+  - id: LOW-01
+    severity: low
+    category: dependency-hygiene
+    description: >
+      package.json contiene dependencias runtime del framework AIOS
+      (@clack/prompts, fs-extra, inquirer, yaml) que no son usadas
+      por la app Next.js y añaden peso al bundle.
+    file: package.json
+    recommendation: Mover a devDependencies o evaluar si son necesarias.
+    suggested_owner: dev
+
+  - id: LOW-02
+    severity: low
+    category: css-architecture
+    description: >
+      Sistema dual de tokens CSS en globals.css: variables --sidebar-bg legadas
+      (hardcodeadas como #1c2434 en Sidebar.tsx) coexisten con tokens shadcn
+      --sidebar (oklch). Crea inconsistencia en el design token system.
+    file: app/globals.css
+    recommendation: >
+      Consolidar en próxima iteración de layout. Reemplazar colores hardcodeados
+      en Sidebar.tsx con CSS vars del sistema de diseño.
+    suggested_owner: dev
+
+  - id: LOW-03
+    severity: low
+    category: tailwind-consistency
+    description: >
+      app/(auth)/layout.tsx usa bg-[var(--background)] (raw CSS var syntax)
+      en lugar de bg-background (Tailwind token). Inconsistente con otros componentes.
+    file: app/(auth)/layout.tsx
+    line: 3
+    recommendation: Cambiar a bg-background para consistencia.
+    suggested_owner: dev
+
+waiver:
+  active: false
+
+quality_score: 90
+
+expires: '2026-03-06T00:00:00Z'
+
+evidence:
+  tests_reviewed: 0  # N/A — testing setup en Story 1.6
+  risks_identified: 4
+  trace:
+    ac_covered: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    ac_gaps: []  # Todos los ACs cubiertos
+
+nfr_validation:
+  security:
+    status: PASS
+    notes: >
+      Sin attack surface en esta story (no auth, no API routes, no user input).
+      .env.example sin valores reales. .env.local en .gitignore.
+  performance:
+    status: PASS
+    notes: >
+      Layout estático, sin data fetching. Tailwind v4 CSS nativo (mejor que v3 JS runtime).
+      Sin heavy computations.
+  reliability:
+    status: PASS
+    notes: >
+      TypeScript strict activo. Build, typecheck y lint pasan sin errores.
+      Husky hook verificado en commit real (lint-staged ejecutó sobre 48 archivos).
+  maintainability:
+    status: CONCERNS
+    notes: >
+      Código limpio y bien estructurado. Concerns: dual color system (LOW-02)
+      y sidebar toggle comportamiento desktop (CONCERN-01).
+
+recommendations:
+  immediate:
+    - action: >
+        Corregir sidebar collapse en desktop: cambiar clase 'w-0 flex xl:w-64'
+        a 'w-0' cuando isOpen=false. Verificar comportamiento en >1280px.
+      refs:
+        - components/layout/Sidebar.tsx
+        - app/(app)/layout.tsx
+
+  future:
+    - action: >
+        Consolidar design tokens — reemplazar colores hardcodeados (#1c2434, #adb7be)
+        en Sidebar.tsx con CSS variables del sistema shadcn.
+      refs:
+        - components/layout/Sidebar.tsx
+        - app/globals.css
+    - action: >
+        Auditar package.json y mover dependencias AIOS (@clack/prompts, fs-extra,
+        inquirer, yaml) a devDependencies o eliminar si no son necesarias para la app.
+      refs:
+        - package.json
+    - action: >
+        Uniformizar uso de Tailwind tokens — cambiar bg-[var(--background)]
+        a bg-background en app/(auth)/layout.tsx.
+      refs:
+        - app/(auth)/layout.tsx
