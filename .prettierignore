@@ -1,0 +1,19 @@
+# Build output
+.next/
+out/
+build/
+dist/
+
+# Dependencies
+node_modules/
+
+# AIOS framework (no formatear — no es código del proyecto)
+.aios-core/
+.claude/
+
+# Generated files
+next-env.d.ts
+*.lock
+
+# Docs (mantener formato original)
+docs/
