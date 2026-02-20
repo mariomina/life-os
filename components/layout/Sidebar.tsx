@@ -58,7 +58,7 @@ export function Sidebar({ isOpen, onToggle }: SidebarProps) {
         className={[
           'fixed left-0 top-0 z-40 h-screen flex-col bg-[#1c2434] dark:bg-[#24303f]',
           'sidebar-transition overflow-hidden',
-          isOpen ? 'w-64 flex' : 'w-0 flex xl:w-64',
+          isOpen ? 'w-64 flex' : 'w-0 flex',
         ].join(' ')}
       >
         {/* Logo */}
