@@ -24,6 +24,36 @@ mcp:
   servers: []
 qa:
   qaLocation: docs/qa
+
+coderabbit_integration:
+  enabled: true
+  installation_mode: wsl
+  wsl_config:
+    distribution: Ubuntu
+    installation_path: ~/.local/bin/coderabbit
+    working_directory: ${PROJECT_ROOT}
+  self_healing:
+    dev_phase:
+      enabled: true
+      type: light
+      max_iterations: 2
+      severity_filter: [CRITICAL, HIGH]
+      behavior:
+        CRITICAL: auto_fix
+        HIGH: auto_fix
+        MEDIUM: document_as_debt
+        LOW: ignore
+    qa_phase:
+      enabled: true
+      type: full
+      max_iterations: 3
+      severity_filter: [CRITICAL, HIGH]
+      behavior:
+        CRITICAL: auto_fix
+        HIGH: auto_fix
+        MEDIUM: document_as_debt
+        LOW: ignore
+  report_location: docs/qa/coderabbit-reports/
 prd:
   prdFile: docs/prd.md
   prdVersion: v4
