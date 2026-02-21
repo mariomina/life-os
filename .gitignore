@@ -4,8 +4,16 @@
 .env
 .env.local
 .env.*.local
+.env.production
+.env.staging
+.env.development
+!.env.example
 *.key
 *.pem
+*.p12
+*.pfx
+*.cert
+*.crt
 
 # Dependencies (AIOS)
 node_modules/
@@ -29,6 +37,15 @@ Thumbs.db
 .aios/install-log.txt
 .aios/environment-report.json
 .aios/project-status.yaml
+
+# MCP & Integrations
+.mcp.json
+
+# Supabase local state
+supabase/.temp/
+
+# Vercel
+.vercel/
 
 # Next.js
 .next/
