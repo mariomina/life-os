@@ -24,6 +24,7 @@ const eslintConfig = defineConfig([
     '.aios-core/**',
     '.claude/**',
     'docs/**',
+    'coverage/**',
   ]),
 ])
 
