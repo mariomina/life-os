@@ -25,6 +25,7 @@ ALTER TABLE correlations ENABLE ROW LEVEL SECURITY;
 -- ============================================
 -- STEP 2: Policies for tables with direct user_id
 -- (ALL operations: user_id = auth.uid())
+-- Note: workflow_templates excluded — handled in STEP 3
 -- ============================================
 
 CREATE POLICY "user_owns_row" ON areas
@@ -71,8 +72,9 @@ CREATE POLICY "user_owns_row" ON correlations
 
 -- ============================================
 -- STEP 3: workflow_templates
+-- user_id is nullable (NULL for system templates seeded by admin).
 -- System templates (is_system=true) are readable by all authenticated users.
--- Users can only insert/update/delete their own templates.
+-- Users can only insert/update/delete their own templates (user_id = auth.uid()).
 -- ============================================
 
 CREATE POLICY "select_own_or_system" ON workflow_templates
