@@ -24,17 +24,15 @@ import * as schema from './schema'
  * NEVER access db directly from Server Actions — always use lib/db/queries/*.ts functions.
  */
 
-if (!process.env.DATABASE_URL) {
-  throw new Error('DATABASE_URL environment variable is not set')
-}
-
-// Connection pool — reuse across requests in the same serverless instance
-const connectionString = process.env.DATABASE_URL
-
 /**
  * postgres-js client.
  * prepare: false → required for Supabase Transaction Pooler (pgBouncer)
+ *
+ * DATABASE_URL is validated at runtime (first request), not at module
+ * evaluation, so that Next.js can complete the build without a live DB.
  */
+const connectionString = process.env.DATABASE_URL ?? 'postgresql://placeholder'
+
 const client = postgres(connectionString, {
   prepare: false,
   // Max connections per serverless function instance
@@ -46,5 +44,15 @@ const client = postgres(connectionString, {
  * Pass schema for db.query.* relational API support.
  */
 export const db = drizzle(client, { schema })
+
+/**
+ * Call this at the top of every server-side query function to ensure
+ * DATABASE_URL is present before attempting a real DB connection.
+ */
+export function assertDatabaseUrl(): void {
+  if (!process.env.DATABASE_URL) {
+    throw new Error('DATABASE_URL environment variable is not set')
+  }
+}
 
 export type DB = typeof db

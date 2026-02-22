@@ -1,5 +1,5 @@
 import { eq, sum } from 'drizzle-orm'
-import { db } from '@/lib/db/client'
+import { db, assertDatabaseUrl } from '@/lib/db/client'
 import { timeEntries, stepsActivities } from '@/lib/db/schema'
 
 /**
@@ -8,6 +8,7 @@ import { timeEntries, stepsActivities } from '@/lib/db/schema'
  * Areas with no time entries are not included (caller should default to 0).
  */
 export async function getTimeInvestedByArea(userId: string): Promise<Record<string, number>> {
+  assertDatabaseUrl()
   const rows = await db
     .select({
       areaId: stepsActivities.areaId,

@@ -1,5 +1,5 @@
 import { eq, desc } from 'drizzle-orm'
-import { db } from '@/lib/db/client'
+import { db, assertDatabaseUrl } from '@/lib/db/client'
 import { areaScores } from '@/lib/db/schema'
 import type { AreaScore } from '@/lib/db/schema/area-scores'
 
@@ -8,6 +8,7 @@ import type { AreaScore } from '@/lib/db/schema/area-scores'
  * Fetches up to `limit` days × 8 areas in a single query.
  */
 export async function getRecentAreaScores(userId: string, days = 7): Promise<AreaScore[]> {
+  assertDatabaseUrl()
   return db
     .select()
     .from(areaScores)
