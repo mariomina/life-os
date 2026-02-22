@@ -2,7 +2,9 @@
 
 import { useState } from 'react'
 import { HierarchyWarning } from '@/components/shared/HierarchyWarning'
+import { OKRImpactBadge } from '@/components/okrs/OKRImpactBadge'
 import { checkHierarchyBlock } from '@/features/maslow/hierarchy-guard'
+import { calculateOKRImpact, buildScoreMap } from '@/features/maslow/okr-impact'
 import type { Area } from '@/lib/db/schema/areas'
 import type { AreaScore } from '@/lib/db/schema/area-scores'
 
@@ -39,6 +41,9 @@ export function OKRForm({ areas, scoreHistory, onSubmit }: OKRFormProps) {
   const guardResult = isHighLevel
     ? checkHierarchyBlock(areas, scoreHistory)
     : { isBlocked: false, blockedAreas: [] }
+
+  // Compute OKR Impact Score when an area is selected
+  const impactResult = areaId ? calculateOKRImpact({ areaId }, areas, buildScoreMap(areas)) : null
 
   const isBlocked = isHighLevel && guardResult.isBlocked
   const canSubmit = title.trim().length > 0 && areaId !== '' && !isBlocked
@@ -91,6 +96,14 @@ export function OKRForm({ areas, scoreHistory, onSubmit }: OKRFormProps) {
             </option>
           ))}
         </select>
+
+        {/* OKR Impact Score badge — shown when an area is selected */}
+        {impactResult && impactResult.deltaPoints > 0 && (
+          <div className="mt-1 flex items-center gap-1.5">
+            <span className="text-xs text-gray-500 dark:text-gray-400">Impacto estimado:</span>
+            <OKRImpactBadge result={impactResult} />
+          </div>
+        )}
       </div>
 
       {/* Year */}
