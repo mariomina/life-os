@@ -3,8 +3,11 @@ import { redirect } from 'next/navigation'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { getUserAreas } from '@/lib/db/queries/areas'
 import { getRecentAreaScores } from '@/lib/db/queries/area-scores'
+import { getTimeInvestedByArea } from '@/lib/db/queries/time-entries'
 import { calculateGlobalScore } from '@/features/maslow/scoring'
 import { calculateTrend, scoreColorClass, scoreBgClass } from '@/lib/utils/trend'
+import { getAlerts } from '@/features/maslow/alerts'
+import { AlertBanner } from '@/components/shared/AlertBanner'
 import type { MaslowLevel } from '@/lib/utils/maslow-weights'
 import type { Area } from '@/lib/db/schema/areas'
 import type { AreaScore } from '@/lib/db/schema/area-scores'
@@ -106,9 +109,10 @@ export default async function HomePage() {
     redirect('/login')
   }
 
-  const [userAreas, recentScores] = await Promise.all([
+  const [userAreas, recentScores, timeMap] = await Promise.all([
     getUserAreas(user.id),
     getRecentAreaScores(user.id, 7),
+    getTimeInvestedByArea(user.id),
   ])
 
   if (userAreas.length === 0) {
@@ -118,6 +122,7 @@ export default async function HomePage() {
   const trendMap = buildTrendMap(recentScores)
   const scoreMap = buildScoreMap(userAreas)
   const globalScore = Math.round(calculateGlobalScore(scoreMap))
+  const alerts = getAlerts(userAreas, timeMap)
 
   const dNeeds = userAreas.filter((a) => a.group === 'd_needs')
   const bNeeds = userAreas.filter((a) => a.group === 'b_needs')
@@ -126,6 +131,9 @@ export default async function HomePage() {
 
   return (
     <div className="space-y-8">
+      {/* Alertas activas */}
+      <AlertBanner alerts={alerts} />
+
       {/* Hero — Life System Health Score */}
       <section className="rounded-xl border bg-card p-6 text-center space-y-2">
         <p className="text-sm font-medium text-muted-foreground uppercase tracking-wide">
