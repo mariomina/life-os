@@ -5,10 +5,17 @@
 // La validación Buffett 5/25 se aplica en createAnnualOKR.
 
 import { eq, and } from 'drizzle-orm'
+import { revalidatePath } from 'next/cache'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { db, assertDatabaseUrl } from '@/lib/db/client'
 import { okrs } from '@/lib/db/schema/okrs'
-import { countActiveAnnualOKRs, getVision } from '@/lib/db/queries/okrs'
+import { stepsActivities } from '@/lib/db/schema/steps-activities'
+import {
+  countActiveAnnualOKRs,
+  getVision,
+  updateKRProgress,
+  updateAnnualOKRProgress,
+} from '@/lib/db/queries/okrs'
 import { MAX_ANNUAL_OKRS } from '@/lib/utils/okr-constants'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
@@ -257,6 +264,91 @@ export async function updateKR(id: string, data: UpdateKRData): Promise<ActionRe
       .set(updatePayload)
       .where(and(eq(okrs.id, id), eq(okrs.userId, userId), eq(okrs.type, 'key_result')))
 
+    return { error: null }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Error desconocido'
+    if (message === 'UNAUTHENTICATED') return { error: 'No autenticado' }
+    return { error: message }
+  }
+}
+
+// ─── KR Progress Actions (Story 3.7) ──────────────────────────────────────────
+
+/**
+ * Recalcula y persiste el progreso de un KR específico.
+ * También actualiza el progreso del OKR anual padre.
+ * Invalida /okrs para que el Server Component re-fetche datos frescos.
+ */
+export async function recalculateKRProgress(krId: string): Promise<ActionResult> {
+  assertDatabaseUrl()
+  try {
+    const userId = await getAuthenticatedUserId()
+
+    // Obtener el KR para conocer su parentId
+    const kr = await db
+      .select()
+      .from(okrs)
+      .where(and(eq(okrs.id, krId), eq(okrs.userId, userId), eq(okrs.type, 'key_result')))
+      .limit(1)
+      .then((rows) => rows[0] ?? null)
+
+    if (!kr) return { error: 'KR no encontrado' }
+
+    await updateKRProgress(userId, krId)
+
+    if (kr.parentId) {
+      await updateAnnualOKRProgress(userId, kr.parentId)
+    }
+
+    revalidatePath('/okrs')
+    return { error: null }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Error desconocido'
+    if (message === 'UNAUTHENTICATED') return { error: 'No autenticado' }
+    return { error: message }
+  }
+}
+
+/**
+ * Confirma un KR de tipo 'milestone' creando una activity de confirmación vinculada.
+ * Después recalcula el progreso (KR pasa a 100%).
+ */
+export async function confirmMilestone(krId: string): Promise<ActionResult> {
+  assertDatabaseUrl()
+  try {
+    const userId = await getAuthenticatedUserId()
+
+    // Validar que el KR existe, pertenece al usuario y es milestone
+    const kr = await db
+      .select()
+      .from(okrs)
+      .where(and(eq(okrs.id, krId), eq(okrs.userId, userId), eq(okrs.type, 'key_result')))
+      .limit(1)
+      .then((rows) => rows[0] ?? null)
+
+    if (!kr) return { error: 'KR no encontrado' }
+    if (kr.krType !== 'milestone') return { error: 'Solo KRs de tipo milestone pueden confirmarse' }
+
+    // Crear activity de confirmación vinculada al KR
+    await db.insert(stepsActivities).values({
+      userId,
+      okrId: krId,
+      areaId: kr.areaId ?? null,
+      title: `Hito confirmado: ${kr.title}`,
+      executorType: 'human',
+      planned: false,
+      status: 'completed',
+      completedAt: new Date(),
+    })
+
+    // Recalcular progreso (ahora habrá ≥1 activity completada → 100%)
+    await updateKRProgress(userId, krId)
+
+    if (kr.parentId) {
+      await updateAnnualOKRProgress(userId, kr.parentId)
+    }
+
+    revalidatePath('/okrs')
     return { error: null }
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Error desconocido'

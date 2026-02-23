@@ -4,7 +4,7 @@ import { useState, useTransition } from 'react'
 import { ChevronDown, ChevronUp, Clock, CheckCircle2, Flag, Plus, Trash2 } from 'lucide-react'
 import { OKRImpactBadge } from '@/components/okrs/OKRImpactBadge'
 import { KRForm } from '@/components/okrs/KRForm'
-import { createKR, deleteOKR } from '@/actions/okrs'
+import { createKR, deleteOKR, confirmMilestone } from '@/actions/okrs'
 import type { CreateKRData } from '@/actions/okrs'
 import { calculateOKRImpact, buildScoreMap } from '@/features/maslow/okr-impact'
 import type { OKR } from '@/lib/db/schema/okrs'
@@ -39,7 +39,7 @@ const KR_TYPE_ICONS = {
 export function AnnualOKRCard({ okr, areas, krs }: AnnualOKRCardProps) {
   const [isExpanded, setIsExpanded] = useState(false)
   const [showKRForm, setShowKRForm] = useState(false)
-  const [, startTransition] = useTransition()
+  const [isPending, startTransition] = useTransition()
 
   const linkedArea = areas.find((a) => a.id === okr.areaId)
   const impactResult = okr.areaId
@@ -61,6 +61,15 @@ export function AnnualOKRCard({ okr, areas, krs }: AnnualOKRCardProps) {
     if (!confirm('¿Estás seguro de que deseas cancelar este OKR y todos sus KRs?')) return
     startTransition(async () => {
       await deleteOKR(okr.id)
+    })
+  }
+
+  function handleConfirmMilestone(krId: string) {
+    startTransition(async () => {
+      const result = await confirmMilestone(krId)
+      if (result.error) {
+        alert(result.error)
+      }
     })
   }
 
@@ -178,6 +187,20 @@ export function AnnualOKRCard({ okr, areas, krs }: AnnualOKRCardProps) {
                       style={{ width: `${kr.progress}%` }}
                     />
                   </div>
+                  {/* Confirm Milestone Button */}
+                  {kr.krType === 'milestone' && kr.progress === 0 && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handleConfirmMilestone(kr.id)
+                      }}
+                      disabled={isPending}
+                      className="w-full mt-1 flex items-center justify-center gap-1.5 rounded-md border border-green-200 bg-green-50 px-2 py-1.5 text-[10px] font-bold uppercase tracking-wider text-green-700 hover:bg-green-100 disabled:opacity-50 transition-colors dark:border-green-800 dark:bg-green-900/20 dark:text-green-400 dark:hover:bg-green-900/40"
+                    >
+                      <CheckCircle2 className="w-3 h-3" />
+                      Confirmar hito
+                    </button>
+                  )}
                 </div>
               ))
             )}

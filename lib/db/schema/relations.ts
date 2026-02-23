@@ -47,6 +47,7 @@ export const okrsRelations = relations(okrs, ({ one, many }) => ({
   }),
   children: many(okrs, { relationName: 'okr_children' }),
   projects: many(projects),
+  linkedActivities: many(stepsActivities),
 }))
 
 // ----------------------------------------------------------------
@@ -97,6 +98,7 @@ export const stepsActivitiesRelations = relations(stepsActivities, ({ one, many 
   task: one(tasks, { fields: [stepsActivities.taskId], references: [tasks.id] }),
   area: one(areas, { fields: [stepsActivities.areaId], references: [areas.id] }),
   habit: one(habits, { fields: [stepsActivities.habitId], references: [habits.id] }),
+  okr: one(okrs, { fields: [stepsActivities.okrId], references: [okrs.id] }),
   timeEntries: many(timeEntries),
   checkinResponses: many(checkinResponses),
   skillTags: many(stepSkillTags),

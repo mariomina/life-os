@@ -2,6 +2,7 @@ import { pgTable, uuid, text, boolean, integer, timestamp, index } from 'drizzle
 import { tasks } from './tasks'
 import { areas } from './areas'
 import { habits } from './habits'
+import { okrs } from './okrs'
 
 /**
  * UNIFIED Steps + Activities entity (FR5 — Steps = Activities).
@@ -61,6 +62,8 @@ export const stepsActivities = pgTable(
      * null for spontaneous activities.
      */
     order: integer('order'),
+    /** Optional link to a Key Result — used to auto-calculate KR progress */
+    okrId: uuid('okr_id').references(() => okrs.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
