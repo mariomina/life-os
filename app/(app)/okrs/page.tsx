@@ -2,7 +2,7 @@ import { redirect } from 'next/navigation'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { getUserAreas } from '@/lib/db/queries/areas'
 import { getRecentAreaScores } from '@/lib/db/queries/area-scores'
-import { getVision, getAnnualOKRs } from '@/lib/db/queries/okrs'
+import { getVision, getAnnualOKRs, getKRsByYear } from '@/lib/db/queries/okrs'
 import { VisionCard } from '@/components/okrs/VisionCard'
 import { AnnualOKRList } from '@/components/okrs/AnnualOKRList'
 
@@ -12,6 +12,7 @@ import { AnnualOKRList } from '@/components/okrs/AnnualOKRList'
  * Carga en paralelo:
  * - vision:       OKR tipo 'vision' del usuario (null si no existe)
  * - annualOKRs:   OKRs anuales del año actual
+ * - krs:          Key Results de todos los OKRs anuales del año actual
  * - userAreas:    Áreas del usuario (para OKRForm — hierarchy guard + impact)
  * - scoreHistory: Historial de scores últimos 30 días (para hierarchy guard)
  */
@@ -27,9 +28,10 @@ export default async function OKRsPage() {
 
   const currentYear = new Date().getFullYear()
 
-  const [vision, annualOKRs, userAreas, scoreHistory] = await Promise.all([
+  const [vision, annualOKRs, krs, userAreas, scoreHistory] = await Promise.all([
     getVision(user.id),
     getAnnualOKRs(user.id, currentYear),
+    getKRsByYear(user.id, currentYear),
     getUserAreas(user.id),
     getRecentAreaScores(user.id, 30),
   ])
@@ -57,6 +59,7 @@ export default async function OKRsPage() {
       <section>
         <AnnualOKRList
           annualOKRs={annualOKRs}
+          krs={krs}
           areas={userAreas}
           scoreHistory={scoreHistory}
           year={currentYear}

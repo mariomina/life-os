@@ -52,3 +52,53 @@ export async function countActiveAnnualOKRs(userId: string, year: number): Promi
     )
   return result[0]?.value ?? 0
 }
+
+/**
+ * Retorna todos los KRs (Key Results) hijos de un OKR anual.
+ * Ordena por trimestre (Q1-Q4).
+ */
+export async function getKRsByAnnualOKR(userId: string, annualOkrId: string): Promise<OKR[]> {
+  assertDatabaseUrl()
+  return db
+    .select()
+    .from(okrs)
+    .where(
+      and(eq(okrs.userId, userId), eq(okrs.parentId, annualOkrId), eq(okrs.type, 'key_result'))
+    )
+    .orderBy(okrs.quarter)
+}
+
+/**
+ * Retorna todos los KRs del usuario filtrados por año y trimestre.
+ * Útil para dashboards tácticos trimestrales.
+ */
+export async function getKRsByQuarter(
+  userId: string,
+  year: number,
+  quarter: 'Q1' | 'Q2' | 'Q3' | 'Q4'
+): Promise<OKR[]> {
+  assertDatabaseUrl()
+  return db
+    .select()
+    .from(okrs)
+    .where(
+      and(
+        eq(okrs.userId, userId),
+        eq(okrs.type, 'key_result'),
+        eq(okrs.year, year),
+        eq(okrs.quarter, quarter)
+      )
+    )
+}
+
+/**
+ * Retorna todos los KRs del usuario para el año dado.
+ */
+export async function getKRsByYear(userId: string, year: number): Promise<OKR[]> {
+  assertDatabaseUrl()
+  return db
+    .select()
+    .from(okrs)
+    .where(and(eq(okrs.userId, userId), eq(okrs.type, 'key_result'), eq(okrs.year, year)))
+    .orderBy(okrs.quarter)
+}

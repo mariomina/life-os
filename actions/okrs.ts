@@ -35,6 +35,27 @@ export interface UpdateAnnualOKRData {
   areaId?: string | null
 }
 
+export interface CreateKRData {
+  parentId: string // ID del OKR anual padre
+  title: string
+  description?: string
+  year: number
+  quarter: 'Q1' | 'Q2' | 'Q3' | 'Q4'
+  krType: 'time_based' | 'outcome_based' | 'milestone'
+  targetValue?: number
+  targetUnit?: string
+}
+
+export interface UpdateKRData {
+  title?: string
+  description?: string
+  quarter?: 'Q1' | 'Q2' | 'Q3' | 'Q4'
+  krType?: 'time_based' | 'outcome_based' | 'milestone'
+  targetValue?: number
+  targetUnit?: string
+  status?: 'active' | 'completed' | 'cancelled' | 'paused'
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 async function getAuthenticatedUserId(): Promise<string> {
@@ -174,6 +195,67 @@ export async function deleteOKR(id: string): Promise<ActionResult> {
       .update(okrs)
       .set({ status: 'cancelled', updatedAt: new Date() })
       .where(and(eq(okrs.id, id), eq(okrs.userId, userId)))
+
+    return { error: null }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Error desconocido'
+    if (message === 'UNAUTHENTICATED') return { error: 'No autenticado' }
+    return { error: message }
+  }
+}
+
+/**
+ * Crea un Key Result (KR) trimestral vinculado a un OKR anual.
+ */
+export async function createKR(data: CreateKRData): Promise<ActionResult> {
+  assertDatabaseUrl()
+  try {
+    const userId = await getAuthenticatedUserId()
+
+    await db.insert(okrs).values({
+      userId,
+      type: 'key_result',
+      parentId: data.parentId,
+      title: data.title,
+      description: data.description ?? null,
+      year: data.year,
+      quarter: data.quarter,
+      krType: data.krType,
+      targetValue: data.targetValue ?? null,
+      targetUnit: data.targetUnit ?? null,
+      progress: 0,
+      status: 'active',
+    })
+
+    return { error: null }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Error desconocido'
+    if (message === 'UNAUTHENTICATED') return { error: 'No autenticado' }
+    return { error: message }
+  }
+}
+
+/**
+ * Actualiza un Key Result (KR) trimestral.
+ */
+export async function updateKR(id: string, data: UpdateKRData): Promise<ActionResult> {
+  assertDatabaseUrl()
+  try {
+    const userId = await getAuthenticatedUserId()
+
+    const updatePayload: Record<string, unknown> = { updatedAt: new Date() }
+    if (data.title !== undefined) updatePayload.title = data.title
+    if (data.description !== undefined) updatePayload.description = data.description ?? null
+    if (data.quarter !== undefined) updatePayload.quarter = data.quarter
+    if (data.krType !== undefined) updatePayload.krType = data.krType
+    if (data.targetValue !== undefined) updatePayload.targetValue = data.targetValue ?? null
+    if (data.targetUnit !== undefined) updatePayload.targetUnit = data.targetUnit ?? null
+    if (data.status !== undefined) updatePayload.status = data.status
+
+    await db
+      .update(okrs)
+      .set(updatePayload)
+      .where(and(eq(okrs.id, id), eq(okrs.userId, userId), eq(okrs.type, 'key_result')))
 
     return { error: null }
   } catch (err) {

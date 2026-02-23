@@ -6,9 +6,8 @@
 
 import { useState, useTransition } from 'react'
 import { OKRForm } from '@/components/okrs/OKRForm'
-import { OKRImpactBadge } from '@/components/okrs/OKRImpactBadge'
+import { AnnualOKRCard } from '@/components/okrs/AnnualOKRCard'
 import { createAnnualOKR } from '@/actions/okrs'
-import { calculateOKRImpact, buildScoreMap } from '@/features/maslow/okr-impact'
 import { MAX_ANNUAL_OKRS } from '@/lib/utils/okr-constants'
 import type { OKR } from '@/lib/db/schema/okrs'
 import type { Area } from '@/lib/db/schema/areas'
@@ -17,6 +16,8 @@ import type { AreaScore } from '@/lib/db/schema/area-scores'
 interface AnnualOKRListProps {
   /** OKRs anuales del año actual cargados en servidor. */
   annualOKRs: OKR[]
+  /** Key Results de todos los OKRs anuales cargados en servidor. */
+  krs: OKR[]
   /** Áreas del usuario — para OKRForm (hierarchy guard + impact). */
   areas: Area[]
   /** Historial reciente de scores — para OKRForm (hierarchy guard). */
@@ -25,35 +26,16 @@ interface AnnualOKRListProps {
   year: number
 }
 
-const STATUS_LABELS: Record<string, string> = {
-  active: 'Activo',
-  completed: 'Completado',
-  cancelled: 'Cancelado',
-  paused: 'Pausado',
-}
-
-const STATUS_COLORS: Record<string, string> = {
-  active: 'bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-400',
-  completed: 'bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400',
-  cancelled: 'bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400',
-  paused: 'bg-yellow-50 text-yellow-700 dark:bg-yellow-900/20 dark:text-yellow-400',
-}
-
 /**
- * Lista de OKRs anuales con soporte para crear nuevos.
- * La regla Buffett se controla en dos capas:
- *   1. UI: botón deshabilitado cuando activeCount >= MAX_ANNUAL_OKRS
- *   2. Server Action: retorna error si la validación falla igualmente
+ * Lista de OKRs anuales con soporte para crear nuevos y ver KRs anidados.
  */
-export function AnnualOKRList({ annualOKRs, areas, scoreHistory, year }: AnnualOKRListProps) {
+export function AnnualOKRList({ annualOKRs, krs, areas, scoreHistory, year }: AnnualOKRListProps) {
   const [showForm, setShowForm] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
 
   const activeCount = annualOKRs.filter((o) => o.status === 'active').length
   const isBuffettLimitReached = activeCount >= MAX_ANNUAL_OKRS
-
-  const scoreMap = buildScoreMap(areas)
 
   function handleOKRSubmit(data: { title: string; areaId: string; year: number }) {
     setFormError(null)
@@ -115,51 +97,14 @@ export function AnnualOKRList({ annualOKRs, areas, scoreHistory, year }: AnnualO
 
       {/* Lista de OKRs */}
       <div className="space-y-3">
-        {annualOKRs.map((okr) => {
-          const impactResult = okr.areaId
-            ? calculateOKRImpact({ areaId: okr.areaId }, areas, scoreMap)
-            : null
-          const linkedArea = areas.find((a) => a.id === okr.areaId)
-
-          return (
-            <div key={okr.id} className="rounded-lg border bg-card p-4 space-y-3">
-              <div className="flex items-start justify-between gap-3">
-                <div className="space-y-1 min-w-0">
-                  <p className="text-sm font-medium text-foreground truncate">{okr.title}</p>
-                  {linkedArea && (
-                    <p className="text-xs text-muted-foreground">
-                      {linkedArea.name} · Nivel {linkedArea.maslowLevel}
-                    </p>
-                  )}
-                </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  {impactResult && impactResult.deltaPoints > 0 && (
-                    <OKRImpactBadge result={impactResult} />
-                  )}
-                  <span
-                    className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_COLORS[okr.status] ?? ''}`}
-                  >
-                    {STATUS_LABELS[okr.status] ?? okr.status}
-                  </span>
-                </div>
-              </div>
-
-              {/* Barra de progreso */}
-              <div className="space-y-1">
-                <div className="flex justify-between text-xs text-muted-foreground">
-                  <span>Progreso</span>
-                  <span>{okr.progress}%</span>
-                </div>
-                <div className="w-full bg-muted rounded-full h-1.5">
-                  <div
-                    className="h-1.5 rounded-full bg-blue-500 transition-all"
-                    style={{ width: `${okr.progress}%` }}
-                  />
-                </div>
-              </div>
-            </div>
-          )
-        })}
+        {annualOKRs.map((okr) => (
+          <AnnualOKRCard
+            key={okr.id}
+            okr={okr}
+            areas={areas}
+            krs={krs.filter((kr) => kr.parentId === okr.id)}
+          />
+        ))}
       </div>
 
       {/* Formulario de nuevo OKR */}
