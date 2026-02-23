@@ -7,6 +7,7 @@ import Link from 'next/link'
 import { ChevronLeft } from 'lucide-react'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { getOrCreateWorkflow } from '@/actions/workflows'
+import { getWorkflowTemplateById } from '@/lib/db/queries/workflow-templates'
 import WorkflowCanvas from '@/components/workflow/WorkflowCanvas'
 import type { Node, Edge } from '@xyflow/react'
 
@@ -17,7 +18,8 @@ import type { Node, Edge } from '@xyflow/react'
  * 1. Autentica al usuario.
  * 2. Llama a getOrCreateWorkflow → garantiza que existe un workflow para el proyecto.
  * 3. Deserializa canvas_data (nodes + edges) si existe.
- * 4. Renderiza WorkflowCanvas (Client Component) con datos iniciales.
+ * 4. Carga el nombre del template activo si templateId está presente.
+ * 5. Renderiza WorkflowCanvas (Client Component) con datos iniciales.
  */
 export default async function WorkflowPage({ params }: { params: Promise<{ id: string }> }) {
   const supabase = await createSupabaseServerClient()
@@ -47,6 +49,13 @@ export default async function WorkflowPage({ params }: { params: Promise<{ id: s
     initialEdges = canvas.edges ?? []
   }
 
+  // Cargar nombre del template activo si existe
+  let templateName: string | null = null
+  if (workflow.templateId) {
+    const template = await getWorkflowTemplateById(workflow.templateId)
+    templateName = template?.name ?? null
+  }
+
   return (
     <div className="flex h-[calc(100vh-64px)] flex-col overflow-hidden">
       {/* Breadcrumb */}
@@ -73,6 +82,8 @@ export default async function WorkflowPage({ params }: { params: Promise<{ id: s
           workflowId={workflow.id}
           initialNodes={initialNodes}
           initialEdges={initialEdges}
+          templateId={workflow.templateId ?? null}
+          templateName={templateName}
         />
       </div>
     </div>

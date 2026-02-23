@@ -2,7 +2,7 @@
 
 // actions/workflows.ts
 // Server Actions para el Visual Workflow Builder (FR20).
-// CRUD de workflows + sincronización canvas ↔ DB.
+// CRUD de workflows + sincronización canvas ↔ DB + instanciación de templates.
 
 import { eq, and, inArray } from 'drizzle-orm'
 import { revalidatePath } from 'next/cache'
@@ -11,7 +11,16 @@ import { db, assertDatabaseUrl } from '@/lib/db/client'
 import { workflows } from '@/lib/db/schema/workflows'
 import { tasks } from '@/lib/db/schema/tasks'
 import { stepsActivities } from '@/lib/db/schema/steps-activities'
+import {
+  getSystemWorkflowTemplates,
+  getWorkflowTemplateById,
+} from '@/lib/db/queries/workflow-templates'
+import { templateConfigToCanvas } from '@/lib/workflow/template-utils'
 import type { Workflow } from '@/lib/db/schema/workflows'
+import type { WorkflowTemplate } from '@/lib/db/schema/workflow-templates'
+import type { TemplateTaskConfig } from '@/lib/workflow/template-utils'
+
+export type { WorkflowTemplate }
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -307,6 +316,101 @@ export async function saveWorkflowCanvas(
     }
 
     return { error: null }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Error desconocido'
+    if (message === 'UNAUTHENTICATED') return { error: 'No autenticado' }
+    return { error: message }
+  }
+}
+
+/**
+ * Retorna todos los templates de sistema disponibles.
+ * No requiere filtro por user_id — los templates del sistema son globales.
+ */
+export async function getWorkflowTemplates(): Promise<{
+  error: string | null
+  templates: WorkflowTemplate[]
+}> {
+  assertDatabaseUrl()
+  try {
+    await getAuthenticatedUserId()
+    const templates = await getSystemWorkflowTemplates()
+    return { error: null, templates }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Error desconocido'
+    if (message === 'UNAUTHENTICATED') return { error: 'No autenticado', templates: [] }
+    return { error: message, templates: [] }
+  }
+}
+
+/**
+ * Instancia un template en el canvas del workflow.
+ *
+ * Flujo:
+ * 1. Verifica ownership del workflow
+ * 2. Obtiene el template por ID
+ * 3. Genera nodos/edges con templateConfigToCanvas()
+ * 4. Persiste tasks + steps + canvas_data + template_id via saveWorkflowCanvas()
+ */
+export async function instantiateTemplate(
+  workflowId: string,
+  templateId: string
+): Promise<
+  ActionResult & {
+    canvasData?: { nodes: FlowNode[]; edges: FlowEdge[] }
+    taskSyncData?: TaskSyncData[]
+    stepSyncData?: StepSyncData[]
+  }
+> {
+  assertDatabaseUrl()
+  try {
+    const userId = await getAuthenticatedUserId()
+
+    // Verificar ownership del workflow
+    const workflowRows = await db
+      .select()
+      .from(workflows)
+      .where(and(eq(workflows.id, workflowId), eq(workflows.userId, userId)))
+      .limit(1)
+
+    if (workflowRows.length === 0) {
+      return { error: 'Workflow no encontrado' }
+    }
+
+    // Obtener template
+    const template = await getWorkflowTemplateById(templateId)
+    if (!template) {
+      return { error: 'Template no encontrado' }
+    }
+
+    // Transformar tasks_config → nodos/edges
+    const tasksConfig = template.tasksConfig as TemplateTaskConfig[]
+    const { nodes, edges, taskSyncData, stepSyncData } = templateConfigToCanvas(tasksConfig)
+
+    // Persistir canvas + tasks + steps
+    const saveResult = await saveWorkflowCanvas(
+      workflowId,
+      { nodes, edges },
+      taskSyncData,
+      stepSyncData
+    )
+
+    if (saveResult.error) {
+      return { error: saveResult.error }
+    }
+
+    // Actualizar template_id en el workflow
+    await db
+      .update(workflows)
+      .set({ templateId, updatedAt: new Date() })
+      .where(eq(workflows.id, workflowId))
+
+    const wf = workflowRows[0]
+    if (wf.projectId) {
+      revalidatePath(`/projects/${wf.projectId}/workflow`)
+    }
+
+    return { error: null, canvasData: { nodes, edges }, taskSyncData, stepSyncData }
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Error desconocido'
     if (message === 'UNAUTHENTICATED') return { error: 'No autenticado' }

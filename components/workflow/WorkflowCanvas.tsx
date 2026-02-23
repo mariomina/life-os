@@ -21,10 +21,17 @@ import '@xyflow/react/dist/style.css'
 import TaskNode from './TaskNode'
 import StepNode from './StepNode'
 import NodeSidebar from './NodeSidebar'
+import TemplateGallery from './TemplateGallery'
 import { applyDagreLayout } from './dagre-layout'
-import { saveWorkflowCanvas } from '@/actions/workflows'
+import { saveWorkflowCanvas, getWorkflowTemplates, instantiateTemplate } from '@/actions/workflows'
 import type { TaskNodeData, StepNodeData } from './types'
-import type { TaskSyncData, StepSyncData, FlowNode, FlowEdge } from '@/actions/workflows'
+import type {
+  TaskSyncData,
+  StepSyncData,
+  FlowNode,
+  FlowEdge,
+  WorkflowTemplate,
+} from '@/actions/workflows'
 
 // ─── Tipos de nodo registrados ────────────────────────────────────────────────
 
@@ -48,6 +55,10 @@ interface WorkflowCanvasProps {
   workflowId: string
   initialNodes?: Node[]
   initialEdges?: Edge[]
+  /** ID del template activo (si el workflow fue instanciado desde uno) */
+  templateId?: string | null
+  /** Nombre del template activo para mostrar en toolbar */
+  templateName?: string | null
 }
 
 // ─── Componente ───────────────────────────────────────────────────────────────
@@ -56,6 +67,8 @@ export default function WorkflowCanvas({
   workflowId,
   initialNodes = [],
   initialEdges = [],
+  templateId: initialTemplateId = null,
+  templateName: initialTemplateName = null,
 }: WorkflowCanvasProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes)
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges)
@@ -63,6 +76,15 @@ export default function WorkflowCanvas({
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [saveSuccess, setSaveSuccess] = useState(false)
+
+  // ── Template state ─────────────────────────────────────────────────────────
+  const [showTemplateGallery, setShowTemplateGallery] = useState(false)
+  const [templates, setTemplates] = useState<WorkflowTemplate[]>([])
+  const [templatesLoading, setTemplatesLoading] = useState(false)
+  const [activeTemplateName, setActiveTemplateName] = useState<string | null>(
+    initialTemplateName ?? null
+  )
+  const [activeTemplateId, setActiveTemplateId] = useState<string | null>(initialTemplateId ?? null)
 
   // ── Conexión de edges ──────────────────────────────────────────────────────
   const onConnect = useCallback(
@@ -212,6 +234,50 @@ export default function WorkflowCanvas({
     }
   }, [workflowId, nodes, edges])
 
+  // ── Abrir galería de templates ─────────────────────────────────────────────
+  const handleOpenTemplateGallery = useCallback(async () => {
+    setShowTemplateGallery(true)
+    if (templates.length === 0) {
+      setTemplatesLoading(true)
+      const result = await getWorkflowTemplates()
+      setTemplatesLoading(false)
+      if (!result.error) {
+        setTemplates(result.templates)
+      }
+    }
+  }, [templates.length])
+
+  // ── Instanciar template ────────────────────────────────────────────────────
+  const handleSelectTemplate = useCallback(
+    async (template: WorkflowTemplate) => {
+      setShowTemplateGallery(false)
+      setSaving(true)
+      setSaveError(null)
+
+      const result = await instantiateTemplate(workflowId, template.id)
+
+      setSaving(false)
+
+      if (result.error) {
+        setSaveError(result.error)
+        return
+      }
+
+      // Actualizar canvas local con los nodos/edges generados
+      if (result.canvasData) {
+        setNodes(result.canvasData.nodes as unknown as Node[])
+        setEdges(result.canvasData.edges as unknown as Edge[])
+      }
+
+      setActiveTemplateId(template.id)
+      setActiveTemplateName(template.name)
+
+      setSaveSuccess(true)
+      setTimeout(() => setSaveSuccess(false), 2000)
+    },
+    [workflowId, setNodes, setEdges]
+  )
+
   // ─── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="flex h-full w-full flex-col">
@@ -235,6 +301,21 @@ export default function WorkflowCanvas({
         >
           Auto-layout
         </button>
+        <button
+          onClick={handleOpenTemplateGallery}
+          disabled={templatesLoading}
+          className="rounded border border-indigo-300 bg-indigo-50 px-3 py-1.5 text-sm font-medium text-indigo-700 hover:bg-indigo-100 disabled:opacity-60"
+        >
+          {templatesLoading ? 'Cargando…' : 'Usar Template'}
+        </button>
+
+        {/* Indicador de template activo */}
+        {activeTemplateName && (
+          <span className="ml-1 inline-flex items-center gap-1 rounded-full bg-indigo-100 px-2.5 py-0.5 text-xs font-medium text-indigo-700">
+            <span className="text-indigo-400">Template:</span> {activeTemplateName}
+          </span>
+        )}
+
         <div className="flex-1" />
         {saveError && <span className="text-sm text-red-600">{saveError}</span>}
         {saveSuccess && <span className="text-sm text-green-600">¡Guardado!</span>}
@@ -279,6 +360,19 @@ export default function WorkflowCanvas({
           />
         )}
       </div>
+
+      {/* Galería de templates */}
+      {showTemplateGallery && (
+        <TemplateGallery
+          templates={templates}
+          hasExistingNodes={nodes.length > 0}
+          onSelect={handleSelectTemplate}
+          onClose={() => setShowTemplateGallery(false)}
+        />
+      )}
+
+      {/* Suppress unused var warning for activeTemplateId */}
+      <span data-template-id={activeTemplateId} className="hidden" aria-hidden="true" />
     </div>
   )
 }
