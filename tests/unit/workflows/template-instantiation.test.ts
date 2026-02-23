@@ -2,7 +2,7 @@
 // Tests unitarios para templateConfigToCanvas() — función pura de Story 4.3.
 // Verifica la transformación tasks_config → { nodes, edges, taskSyncData, stepSyncData }.
 
-import { describe, it, expect, vi, beforeAll } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 
 // Mock de applyDagreLayout — retorna los nodos sin modificar posiciones.
 // Aísla los tests del entorno browser que requiere @xyflow/react.

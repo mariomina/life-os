@@ -23,7 +23,9 @@ const eslintConfig = defineConfig([
     'node_modules/**',
     '.aios-core/**',
     '.claude/**',
+    '.gemini/**',
     'docs/**',
+    'scripts/**',
     'coverage/**',
   ]),
 ])
