@@ -20,8 +20,6 @@ import type { Workflow } from '@/lib/db/schema/workflows'
 import type { WorkflowTemplate } from '@/lib/db/schema/workflow-templates'
 import type { TemplateTaskConfig } from '@/lib/workflow/template-utils'
 
-export type { WorkflowTemplate }
-
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
 export interface ActionResult {

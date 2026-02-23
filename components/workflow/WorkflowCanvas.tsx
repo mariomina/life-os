@@ -31,13 +31,8 @@ import {
 } from '@/actions/workflows'
 import { squadTypeToPrimaryAgent, SQUAD_LABELS, type SquadType } from '@/lib/workflow/squad-utils'
 import type { TaskNodeData, StepNodeData } from './types'
-import type {
-  TaskSyncData,
-  StepSyncData,
-  FlowNode,
-  FlowEdge,
-  WorkflowTemplate,
-} from '@/actions/workflows'
+import type { TaskSyncData, StepSyncData, FlowNode, FlowEdge } from '@/actions/workflows'
+import type { WorkflowTemplate } from '@/lib/db/schema/workflow-templates'
 
 // ─── Tipos de nodo registrados ────────────────────────────────────────────────
 
