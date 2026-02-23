@@ -1,0 +1,284 @@
+'use client'
+
+// components/workflow/WorkflowCanvas.tsx
+// Canvas principal del Visual Workflow Builder con React Flow.
+// Client Component — React Flow requiere APIs de browser.
+
+import { useCallback, useState } from 'react'
+import {
+  ReactFlow,
+  Background,
+  Controls,
+  addEdge,
+  useNodesState,
+  useEdgesState,
+  type Node,
+  type Edge,
+  type Connection,
+  type NodeTypes,
+} from '@xyflow/react'
+import '@xyflow/react/dist/style.css'
+import TaskNode from './TaskNode'
+import StepNode from './StepNode'
+import NodeSidebar from './NodeSidebar'
+import { applyDagreLayout } from './dagre-layout'
+import { saveWorkflowCanvas } from '@/actions/workflows'
+import type { TaskNodeData, StepNodeData } from './types'
+import type { TaskSyncData, StepSyncData, FlowNode, FlowEdge } from '@/actions/workflows'
+
+// ─── Tipos de nodo registrados ────────────────────────────────────────────────
+
+const nodeTypes: NodeTypes = {
+  task: TaskNode,
+  step: StepNode,
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+const defaultEdgeOptions = {
+  animated: true,
+  type: 'smoothstep',
+  style: { strokeWidth: 2, stroke: '#94a3b8' },
+  markerEnd: { type: 'arrowclosed' as const, color: '#94a3b8' },
+}
+
+// ─── Props ────────────────────────────────────────────────────────────────────
+
+interface WorkflowCanvasProps {
+  workflowId: string
+  initialNodes?: Node[]
+  initialEdges?: Edge[]
+}
+
+// ─── Componente ───────────────────────────────────────────────────────────────
+
+export default function WorkflowCanvas({
+  workflowId,
+  initialNodes = [],
+  initialEdges = [],
+}: WorkflowCanvasProps) {
+  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes)
+  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges)
+  const [selectedNode, setSelectedNode] = useState<Node | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const [saveSuccess, setSaveSuccess] = useState(false)
+
+  // ── Conexión de edges ──────────────────────────────────────────────────────
+  const onConnect = useCallback(
+    (connection: Connection) => {
+      setEdges((eds) => addEdge({ ...connection, ...defaultEdgeOptions }, eds))
+    },
+    [setEdges]
+  )
+
+  // ── Selección de nodo ──────────────────────────────────────────────────────
+  const onNodeClick = useCallback((_: React.MouseEvent, node: Node) => {
+    setSelectedNode(node)
+  }, [])
+
+  const onPaneClick = useCallback(() => {
+    setSelectedNode(null)
+  }, [])
+
+  // ── Actualizar nodo desde sidebar ──────────────────────────────────────────
+  const updateNodeData = useCallback(
+    (nodeId: string, updates: Partial<TaskNodeData | StepNodeData>) => {
+      setNodes((nds) =>
+        nds.map((n) => {
+          if (n.id !== nodeId) return n
+          return { ...n, data: { ...n.data, ...updates } }
+        })
+      )
+      setSelectedNode((prev) =>
+        prev?.id === nodeId ? { ...prev, data: { ...prev.data, ...updates } } : prev
+      )
+    },
+    [setNodes]
+  )
+
+  // ── Agregar Task ───────────────────────────────────────────────────────────
+  const addTask = useCallback(() => {
+    const id = crypto.randomUUID()
+    const newNode: Node = {
+      id,
+      type: 'task',
+      position: { x: 80 + nodes.length * 20, y: 80 + nodes.length * 20 },
+      data: {
+        label: 'Nueva Task',
+        status: 'pending',
+        onLabelChange: (label: string) => updateNodeData(id, { label }),
+      } satisfies TaskNodeData,
+    }
+    setNodes((nds) => [...nds, newNode])
+  }, [nodes.length, setNodes, updateNodeData])
+
+  // ── Agregar Step ───────────────────────────────────────────────────────────
+  const addStep = useCallback(() => {
+    const id = crypto.randomUUID()
+    const newNode: Node = {
+      id,
+      type: 'step',
+      position: { x: 300 + nodes.length * 20, y: 80 + nodes.length * 20 },
+      data: {
+        label: 'Nuevo Step',
+        executorType: 'human',
+        status: 'pending',
+      } satisfies StepNodeData,
+    }
+    setNodes((nds) => [...nds, newNode])
+  }, [nodes.length, setNodes])
+
+  // ── Auto-layout ────────────────────────────────────────────────────────────
+  const autoLayout = useCallback(() => {
+    const laid = applyDagreLayout(nodes, edges)
+    setNodes(laid)
+  }, [nodes, edges, setNodes])
+
+  // ── Guardar ────────────────────────────────────────────────────────────────
+  const handleSave = useCallback(async () => {
+    setSaving(true)
+    setSaveError(null)
+    setSaveSuccess(false)
+
+    // Preparar canvas_data (FlowNode / FlowEdge sin callbacks)
+    const canvasNodes: FlowNode[] = nodes.map((n) => {
+      const rawData = n.data as unknown as TaskNodeData & { onLabelChange?: unknown }
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { onLabelChange: _ignored, ...cleanData } = rawData
+      return {
+        id: n.id,
+        type: n.type as 'task' | 'step',
+        position: n.position,
+        data: cleanData as FlowNode['data'],
+      }
+    })
+
+    const canvasEdges: FlowEdge[] = edges.map((e) => ({
+      id: e.id,
+      source: e.source,
+      target: e.target,
+      type: e.type,
+      animated: e.animated,
+    }))
+
+    // Preparar TaskSyncData
+    const taskNodes = nodes.filter((n) => n.type === 'task')
+    const taskSyncData: TaskSyncData[] = taskNodes.map((n, idx) => {
+      const d = n.data as unknown as TaskNodeData
+      return {
+        id: n.id,
+        title: d.label,
+        status: d.status,
+        order: idx,
+      }
+    })
+
+    // Preparar StepSyncData — resolución de taskId desde edges entrantes
+    const stepNodes = nodes.filter((n) => n.type === 'step')
+    const stepSyncData: StepSyncData[] = stepNodes.map((n, idx) => {
+      const d = n.data as unknown as StepNodeData
+      // Buscar edge que conecta una Task hacia este Step
+      const parentEdge = edges.find((e) => {
+        const sourceNode = nodes.find((sn) => sn.id === e.source)
+        return e.target === n.id && sourceNode?.type === 'task'
+      })
+      return {
+        id: n.id,
+        taskId: parentEdge ? parentEdge.source : null,
+        title: d.label,
+        executorType: d.executorType,
+        aiAgent: d.aiAgent ?? null,
+        verificationCriteria: d.verificationCriteria ?? null,
+        description: d.description ?? null,
+        status: d.status,
+        order: idx,
+      }
+    })
+
+    const result = await saveWorkflowCanvas(
+      workflowId,
+      { nodes: canvasNodes, edges: canvasEdges },
+      taskSyncData,
+      stepSyncData
+    )
+
+    setSaving(false)
+    if (result.error) {
+      setSaveError(result.error)
+    } else {
+      setSaveSuccess(true)
+      setTimeout(() => setSaveSuccess(false), 2000)
+    }
+  }, [workflowId, nodes, edges])
+
+  // ─── Render ────────────────────────────────────────────────────────────────
+  return (
+    <div className="flex h-full w-full flex-col">
+      {/* Toolbar */}
+      <div className="flex items-center gap-2 border-b border-slate-200 bg-white px-4 py-2">
+        <button
+          onClick={addTask}
+          className="rounded bg-slate-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700"
+        >
+          + Task
+        </button>
+        <button
+          onClick={addStep}
+          className="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
+        >
+          + Step
+        </button>
+        <button
+          onClick={autoLayout}
+          className="rounded border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+        >
+          Auto-layout
+        </button>
+        <div className="flex-1" />
+        {saveError && <span className="text-sm text-red-600">{saveError}</span>}
+        {saveSuccess && <span className="text-sm text-green-600">¡Guardado!</span>}
+        <button
+          onClick={handleSave}
+          disabled={saving}
+          className="rounded bg-green-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-green-700 disabled:opacity-60"
+        >
+          {saving ? 'Guardando…' : 'Guardar'}
+        </button>
+      </div>
+
+      {/* Canvas + Sidebar */}
+      <div className="flex flex-1 overflow-hidden">
+        {/* React Flow canvas */}
+        <div className="flex-1" style={{ height: 'calc(100vh - 200px)' }}>
+          <ReactFlow
+            nodes={nodes}
+            edges={edges}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
+            onConnect={onConnect}
+            onNodeClick={onNodeClick}
+            onPaneClick={onPaneClick}
+            nodeTypes={nodeTypes}
+            defaultEdgeOptions={defaultEdgeOptions}
+            fitView
+            fitViewOptions={{ padding: 0.2 }}
+            deleteKeyCode="Delete"
+          >
+            <Background color="#e2e8f0" gap={16} />
+            <Controls />
+          </ReactFlow>
+        </div>
+
+        {/* Panel lateral */}
+        {selectedNode && (
+          <NodeSidebar
+            node={selectedNode}
+            onUpdate={updateNodeData}
+            onClose={() => setSelectedNode(null)}
+          />
+        )}
+      </div>
+    </div>
+  )
+}

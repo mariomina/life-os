@@ -144,6 +144,22 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
         <ProjectEditInline project={project} areas={userAreas} allKrs={allKrs} />
       </section>
 
+      {/* Workflow */}
+      <section className="rounded-lg border bg-card p-5 space-y-3">
+        <h2 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+          Workflow
+        </h2>
+        <p className="text-sm text-muted-foreground">
+          Organiza las tareas y pasos de este proyecto visualmente en el canvas de workflow.
+        </p>
+        <Link
+          href={`/projects/${project.id}/workflow`}
+          className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
+        >
+          Ver Workflow
+        </Link>
+      </section>
+
       {/* Zona peligrosa */}
       {project.status !== 'archived' && (
         <section className="rounded-lg border border-dashed border-red-200 dark:border-red-800 p-4 flex items-center justify-between">
