@@ -11,11 +11,13 @@ import { db, assertDatabaseUrl } from '@/lib/db/client'
 import { workflows } from '@/lib/db/schema/workflows'
 import { tasks } from '@/lib/db/schema/tasks'
 import { stepsActivities } from '@/lib/db/schema/steps-activities'
+import { aiosQueueLog } from '@/lib/db/schema/aios-queue-log'
 import {
   getSystemWorkflowTemplates,
   getWorkflowTemplateById,
 } from '@/lib/db/queries/workflow-templates'
 import { templateConfigToCanvas } from '@/lib/workflow/template-utils'
+import { getNextBusinessDaySlot } from '@/lib/workflow/scheduling-utils'
 import type { Workflow } from '@/lib/db/schema/workflows'
 import type { WorkflowTemplate } from '@/lib/db/schema/workflow-templates'
 import type { TemplateTaskConfig } from '@/lib/workflow/template-utils'
@@ -306,6 +308,12 @@ export async function saveWorkflowCanvas(
       })
       .where(eq(workflows.id, workflowId))
 
+    // ── 6. Procesar steps pending: AI → cola AIOS, human/mixed → scheduledAt ─
+    const allStepIds = stepSyncData.map((s) => s.id)
+    if (allStepIds.length > 0) {
+      await processWorkflowSteps(userId, allStepIds)
+    }
+
     revalidatePath(`/projects`)
     // Extraer projectId del workflow para revalidar
     const wf = workflowRows[0]
@@ -318,6 +326,61 @@ export async function saveWorkflowCanvas(
     const message = err instanceof Error ? err.message : 'Error desconocido'
     if (message === 'UNAUTHENTICATED') return { error: 'No autenticado' }
     return { error: message }
+  }
+}
+
+/**
+ * Procesa steps pending tras sincronizar el canvas:
+ * - executorType='ai'            → INSERT en aios_queue_log + UPDATE status='in_progress'
+ * - executorType='human'|'mixed' → UPDATE scheduledAt + scheduledDurationMinutes=30
+ *
+ * Idempotente: verifica estado antes de operar para evitar duplicados.
+ * Maneja aiAgent=null (squad 'none') → agent='unassigned'.
+ */
+async function processWorkflowSteps(userId: string, stepIds: string[]): Promise<void> {
+  // Leer solo steps en estado 'pending'
+  const pendingSteps = await db
+    .select()
+    .from(stepsActivities)
+    .where(and(inArray(stepsActivities.id, stepIds), eq(stepsActivities.status, 'pending')))
+
+  for (const step of pendingSteps) {
+    if (step.executorType === 'ai') {
+      // Verificar idempotencia: no encolar si ya existe entry queued/running
+      const existing = await db
+        .select({ id: aiosQueueLog.id })
+        .from(aiosQueueLog)
+        .where(
+          and(eq(aiosQueueLog.stepId, step.id), inArray(aiosQueueLog.status, ['queued', 'running']))
+        )
+        .limit(1)
+
+      if (existing.length === 0) {
+        await db.insert(aiosQueueLog).values({
+          stepId: step.id,
+          userId,
+          agent: step.aiAgent ?? 'unassigned',
+          status: 'queued',
+        })
+        await db
+          .update(stepsActivities)
+          .set({ status: 'in_progress', updatedAt: new Date() })
+          .where(eq(stepsActivities.id, step.id))
+      }
+    } else {
+      // human o mixed: calendarizar si aún no tiene scheduledAt
+      if (!step.scheduledAt) {
+        const slot = getNextBusinessDaySlot(new Date())
+        await db
+          .update(stepsActivities)
+          .set({
+            scheduledAt: slot,
+            scheduledDurationMinutes: 30,
+            updatedAt: new Date(),
+          })
+          .where(eq(stepsActivities.id, step.id))
+      }
+    }
   }
 }
 

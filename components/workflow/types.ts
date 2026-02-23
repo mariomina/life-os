@@ -14,6 +14,10 @@ export interface StepNodeData {
   verificationCriteria?: string | null
   description?: string | null
   status: 'pending' | 'in_progress' | 'completed' | 'skipped' | 'cancelled'
+  /** Estado de cola AIOS (solo para executorType='ai') */
+  queueStatus?: 'queued' | 'running' | 'completed' | 'failed' | null
+  /** Fecha calendarizada ISO string (solo para executorType='human'|'mixed') */
+  scheduledAt?: string | null
 }
 
 /** Colores para executor_type */

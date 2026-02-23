@@ -66,15 +66,54 @@ function StepNode({ data, selected }: NodeProps) {
         {stepData.label}
       </span>
 
-      {/* Badge de agente (solo para steps AI) */}
+      {/* Badge de agente + estado de cola (solo para steps AI) */}
       {stepData.executorType === 'ai' && (
-        <span
-          className="mt-0.5 text-[9px] font-medium leading-none text-white/80"
-          title={stepData.aiAgent ? `Agente: ${stepData.aiAgent}` : 'Sin agente asignado'}
-        >
-          {stepData.aiAgent ?? 'Sin agente'}
-        </span>
+        <>
+          <span
+            className="mt-0.5 text-[9px] font-medium leading-none text-white/80"
+            title={stepData.aiAgent ? `Agente: ${stepData.aiAgent}` : 'Sin agente asignado'}
+          >
+            {stepData.aiAgent ?? 'Sin agente'}
+          </span>
+          {stepData.queueStatus && (
+            <span
+              className={`mt-0.5 rounded px-1 text-[8px] font-bold leading-none ${
+                stepData.queueStatus === 'queued'
+                  ? 'bg-yellow-400/30 text-yellow-100'
+                  : stepData.queueStatus === 'running'
+                    ? 'bg-blue-400/30 text-blue-100'
+                    : stepData.queueStatus === 'completed'
+                      ? 'bg-green-400/30 text-green-100'
+                      : 'bg-red-400/30 text-red-100'
+              }`}
+              title={`Cola: ${stepData.queueStatus}`}
+            >
+              {stepData.queueStatus === 'queued'
+                ? 'En cola'
+                : stepData.queueStatus === 'running'
+                  ? 'En progreso'
+                  : stepData.queueStatus === 'completed'
+                    ? 'Completado'
+                    : 'Error'}
+            </span>
+          )}
+        </>
       )}
+
+      {/* Badge de fecha calendarizada (solo para steps Human/Mixed) */}
+      {(stepData.executorType === 'human' || stepData.executorType === 'mixed') &&
+        stepData.scheduledAt && (
+          <span
+            className="mt-0.5 text-[8px] font-medium leading-none text-white/70"
+            title={`Calendarizado: ${new Date(stepData.scheduledAt).toLocaleString('es-ES', { weekday: 'short', hour: '2-digit', minute: '2-digit' })}`}
+          >
+            {new Date(stepData.scheduledAt).toLocaleString('es-ES', {
+              weekday: 'short',
+              hour: '2-digit',
+              minute: '2-digit',
+            })}
+          </span>
+        )}
 
       {/* Handles */}
       <Handle

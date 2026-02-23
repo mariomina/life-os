@@ -40,6 +40,7 @@ export * from './time-entries'
 export * from './inbox-items'
 export * from './checkin-responses'
 export * from './step-skill-tags'
+export * from './aios-queue-log'
 
 // ── Level 8: Independent analytics ───────────────────────────
 export * from './correlations'
