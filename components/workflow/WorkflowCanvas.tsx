@@ -23,7 +23,13 @@ import StepNode from './StepNode'
 import NodeSidebar from './NodeSidebar'
 import TemplateGallery from './TemplateGallery'
 import { applyDagreLayout } from './dagre-layout'
-import { saveWorkflowCanvas, getWorkflowTemplates, instantiateTemplate } from '@/actions/workflows'
+import {
+  saveWorkflowCanvas,
+  getWorkflowTemplates,
+  instantiateTemplate,
+  updateWorkflowSquad,
+} from '@/actions/workflows'
+import { squadTypeToPrimaryAgent, SQUAD_LABELS, type SquadType } from '@/lib/workflow/squad-utils'
 import type { TaskNodeData, StepNodeData } from './types'
 import type {
   TaskSyncData,
@@ -59,6 +65,8 @@ interface WorkflowCanvasProps {
   templateId?: string | null
   /** Nombre del template activo para mostrar en toolbar */
   templateName?: string | null
+  /** Squad de agentes asignado al workflow */
+  squadType?: SquadType
 }
 
 // ─── Componente ───────────────────────────────────────────────────────────────
@@ -69,6 +77,7 @@ export default function WorkflowCanvas({
   initialEdges = [],
   templateId: initialTemplateId = null,
   templateName: initialTemplateName = null,
+  squadType: initialSquadType = 'none',
 }: WorkflowCanvasProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes)
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges)
@@ -85,6 +94,9 @@ export default function WorkflowCanvas({
     initialTemplateName ?? null
   )
   const [activeTemplateId, setActiveTemplateId] = useState<string | null>(initialTemplateId ?? null)
+
+  // ── Squad state ────────────────────────────────────────────────────────────
+  const [activeSquadType, setActiveSquadType] = useState<SquadType>(initialSquadType)
 
   // ── Conexión de edges ──────────────────────────────────────────────────────
   const onConnect = useCallback(
@@ -278,6 +290,44 @@ export default function WorkflowCanvas({
     [workflowId, setNodes, setEdges]
   )
 
+  // ── Cambiar squad ──────────────────────────────────────────────────────────
+  const handleSquadChange = useCallback(
+    async (newSquad: SquadType) => {
+      const prevSquad = activeSquadType
+      // Optimistic update: actualizar estado local primero
+      setActiveSquadType(newSquad)
+
+      // Actualizar nodos AI con el nuevo agente del squad
+      const primaryAgent = squadTypeToPrimaryAgent(newSquad)
+      setNodes((nds) =>
+        nds.map((n) => {
+          if (n.type !== 'step') return n
+          const d = n.data as unknown as StepNodeData
+          if (d.executorType !== 'ai') return n
+          return { ...n, data: { ...n.data, aiAgent: primaryAgent } }
+        })
+      )
+
+      // Persistir en DB
+      const result = await updateWorkflowSquad(workflowId, newSquad)
+      if (result.error) {
+        // Rollback si falla
+        setActiveSquadType(prevSquad)
+        const prevAgent = squadTypeToPrimaryAgent(prevSquad)
+        setNodes((nds) =>
+          nds.map((n) => {
+            if (n.type !== 'step') return n
+            const d = n.data as unknown as StepNodeData
+            if (d.executorType !== 'ai') return n
+            return { ...n, data: { ...n.data, aiAgent: prevAgent } }
+          })
+        )
+        setSaveError(result.error)
+      }
+    },
+    [activeSquadType, workflowId, setNodes]
+  )
+
   // ─── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="flex h-full w-full flex-col">
@@ -315,6 +365,25 @@ export default function WorkflowCanvas({
             <span className="text-indigo-400">Template:</span> {activeTemplateName}
           </span>
         )}
+
+        {/* Separador */}
+        <div className="h-5 w-px bg-slate-200" />
+
+        {/* Selector de Squad */}
+        <label className="flex items-center gap-1.5 text-sm text-slate-600">
+          <span className="font-medium">Squad:</span>
+          <select
+            value={activeSquadType}
+            onChange={(e) => handleSquadChange(e.target.value as SquadType)}
+            className="rounded border border-slate-300 bg-white px-2 py-1 text-sm text-slate-700 hover:border-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-400"
+          >
+            {(Object.keys(SQUAD_LABELS) as SquadType[]).map((key) => (
+              <option key={key} value={key}>
+                {SQUAD_LABELS[key]}
+              </option>
+            ))}
+          </select>
+        </label>
 
         <div className="flex-1" />
         {saveError && <span className="text-sm text-red-600">{saveError}</span>}

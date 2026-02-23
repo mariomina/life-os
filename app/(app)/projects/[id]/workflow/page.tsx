@@ -84,6 +84,7 @@ export default async function WorkflowPage({ params }: { params: Promise<{ id: s
           initialEdges={initialEdges}
           templateId={workflow.templateId ?? null}
           templateName={templateName}
+          squadType={workflow.squadType}
         />
       </div>
     </div>

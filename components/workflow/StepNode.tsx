@@ -66,6 +66,16 @@ function StepNode({ data, selected }: NodeProps) {
         {stepData.label}
       </span>
 
+      {/* Badge de agente (solo para steps AI) */}
+      {stepData.executorType === 'ai' && (
+        <span
+          className="mt-0.5 text-[9px] font-medium leading-none text-white/80"
+          title={stepData.aiAgent ? `Agente: ${stepData.aiAgent}` : 'Sin agente asignado'}
+        >
+          {stepData.aiAgent ?? 'Sin agente'}
+        </span>
+      )}
+
       {/* Handles */}
       <Handle
         type="target"

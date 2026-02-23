@@ -352,6 +352,56 @@ export async function getWorkflowTemplates(): Promise<{
  * 3. Genera nodos/edges con templateConfigToCanvas()
  * 4. Persiste tasks + steps + canvas_data + template_id via saveWorkflowCanvas()
  */
+/**
+ * Actualiza el squad asignado a un workflow.
+ * Verifica ownership antes de actualizar.
+ */
+export async function updateWorkflowSquad(
+  workflowId: string,
+  squadType: 'dev' | 'research' | 'coach' | 'none'
+): Promise<ActionResult> {
+  assertDatabaseUrl()
+  try {
+    const userId = await getAuthenticatedUserId()
+
+    // Verificar ownership
+    const workflowRows = await db
+      .select()
+      .from(workflows)
+      .where(and(eq(workflows.id, workflowId), eq(workflows.userId, userId)))
+      .limit(1)
+
+    if (workflowRows.length === 0) {
+      return { error: 'Workflow no encontrado' }
+    }
+
+    await db
+      .update(workflows)
+      .set({ squadType, updatedAt: new Date() })
+      .where(eq(workflows.id, workflowId))
+
+    const wf = workflowRows[0]
+    if (wf.projectId) {
+      revalidatePath(`/projects/${wf.projectId}/workflow`)
+    }
+
+    return { error: null }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Error desconocido'
+    if (message === 'UNAUTHENTICATED') return { error: 'No autenticado' }
+    return { error: message }
+  }
+}
+
+/**
+ * Instancia un template en el canvas del workflow.
+ *
+ * Flujo:
+ * 1. Verifica ownership del workflow
+ * 2. Obtiene el template por ID
+ * 3. Genera nodos/edges con templateConfigToCanvas()
+ * 4. Persiste tasks + steps + canvas_data + template_id via saveWorkflowCanvas()
+ */
 export async function instantiateTemplate(
   workflowId: string,
   templateId: string
