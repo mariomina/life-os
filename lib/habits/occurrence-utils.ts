@@ -105,8 +105,8 @@ export function describeRrule(rruleStr: string): string {
       const dayNames = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
       // rrule weekdays: MO=0, TU=1, ..., SU=6
       const days = options.byweekday
-        ?.map((d) => {
-          const idx = typeof d === 'number' ? d : (d as { weekday: number }).weekday
+        ?.map((d: number | { weekday: number }) => {
+          const idx = typeof d === 'number' ? d : d.weekday
           return dayNames[idx]
         })
         .join(', ')
