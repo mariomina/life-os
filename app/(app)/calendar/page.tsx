@@ -1,31 +1,12 @@
 // app/(app)/calendar/page.tsx
-// Server Component — auth check + calendar shell.
+// Server Component — auth check + calendar data fetch.
 // Delegates rendering to CalendarClient (Client Component).
 
 import { redirect } from 'next/navigation'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { CalendarClient } from './_components/CalendarClient'
+import { getActivitiesForDay } from '@/lib/db/queries/calendar'
 import type { ICalendarEvent } from '@/lib/calendar/calendar-utils'
-
-// ─── Stub events for AC5 (removed when DB is connected in Story 5.2+) ─────────
-
-const STUB_EVENTS: ICalendarEvent[] = [
-  {
-    id: 'stub-1',
-    title: 'Meditación matutina',
-    start: new Date(new Date().setUTCHours(7, 0, 0, 0)),
-    end: new Date(new Date().setUTCHours(7, 30, 0, 0)),
-    color: 'blue',
-    description: 'Evento de prueba — se reemplazará con datos reales en Story 5.2',
-  },
-  {
-    id: 'stub-2',
-    title: 'Bloque de trabajo profundo',
-    start: new Date(new Date().setUTCHours(9, 0, 0, 0)),
-    end: new Date(new Date().setUTCHours(11, 0, 0, 0)),
-    color: 'purple',
-  },
-]
 
 export default async function CalendarPage() {
   const supabase = await createSupabaseServerClient()
@@ -35,6 +16,28 @@ export default async function CalendarPage() {
 
   if (!user) {
     redirect('/login')
+  }
+
+  // Fetch today's activities; fall back to empty array on error (AC2)
+  let events: ICalendarEvent[] = []
+  try {
+    const activities = await getActivitiesForDay(user.id, new Date())
+    events = activities
+      .filter((a) => a.scheduledAt != null)
+      .map((a) => {
+        const start = new Date(a.scheduledAt)
+        const durationMs = (a.scheduledDurationMinutes ?? 30) * 60 * 1000
+        return {
+          id: a.id,
+          title: a.title,
+          start,
+          end: new Date(start.getTime() + durationMs),
+          color: a.areaColor,
+          description: a.areaName ?? undefined,
+        }
+      })
+  } catch (err) {
+    console.error('[CalendarPage] getActivitiesForDay failed:', err)
   }
 
   return (
@@ -48,7 +51,7 @@ export default async function CalendarPage() {
       </section>
 
       {/* Calendar */}
-      <CalendarClient events={STUB_EVENTS} defaultView="week" />
+      <CalendarClient events={events} defaultView="week" />
     </div>
   )
 }

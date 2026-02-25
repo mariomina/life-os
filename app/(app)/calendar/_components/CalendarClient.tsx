@@ -5,8 +5,11 @@
 // Implements the 5-view calendar (Day / Week / Month / Year / Agenda)
 // using the types and structure from lramos33/big-calendar,
 // adapted to Tailwind v4 and date-fns v4.
+//
+// Story 5.2: fix timezone (getUTCHours→getHours), Time Budget panel, action buttons.
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import {
   format,
   addDays,
@@ -50,6 +53,107 @@ const EVENT_COLOR_CLASSES: Record<string, string> = {
   purple: 'bg-purple-500/20 border-purple-500 text-purple-700 dark:text-purple-300',
   orange: 'bg-orange-500/20 border-orange-500 text-orange-700 dark:text-orange-300',
   gray: 'bg-gray-500/20 border-gray-500 text-gray-700 dark:text-gray-300',
+}
+
+// ─── Time Budget helpers ───────────────────────────────────────────────────────
+
+const AVAILABLE_MINUTES = 16 * 60 // 6:00–22:00 = 960 min
+
+export function calcTimeBudget(events: ICalendarEvent[]) {
+  const committed = events.reduce((acc, e) => {
+    return acc + (e.end.getTime() - e.start.getTime()) / 60000
+  }, 0)
+  return {
+    committed,
+    available: AVAILABLE_MINUTES,
+    free: AVAILABLE_MINUTES - committed,
+  }
+}
+
+function formatMinutes(minutes: number): string {
+  const abs = Math.abs(minutes)
+  const h = Math.floor(abs / 60)
+  const m = Math.round(abs % 60)
+  return `${h}h ${m}m`
+}
+
+// ─── Time Budget Panel (AC4) ───────────────────────────────────────────────────
+
+function TimeBudgetPanel({ events }: { events: ICalendarEvent[] }) {
+  const { committed, available, free } = calcTimeBudget(events)
+  const isOvercommitted = free < 0
+
+  return (
+    <div className="flex items-center gap-6 px-4 py-2 border-b border-border bg-muted/30 text-sm">
+      <span className="font-medium text-foreground">Time Budget</span>
+      <div className="flex items-center gap-1 text-muted-foreground">
+        <span>Comprometido:</span>
+        <span className="font-semibold text-foreground">{formatMinutes(committed)}</span>
+      </div>
+      <div className="flex items-center gap-1 text-muted-foreground">
+        <span>Disponible:</span>
+        <span className="font-semibold text-foreground">{formatMinutes(available)}</span>
+      </div>
+      <div className="flex items-center gap-1 text-muted-foreground">
+        <span>Libre:</span>
+        <span
+          className={`font-semibold ${isOvercommitted ? 'text-red-500' : 'text-green-600 dark:text-green-400'}`}
+        >
+          {isOvercommitted ? '-' : ''}
+          {formatMinutes(free)}
+        </span>
+      </div>
+    </div>
+  )
+}
+
+// ─── Event Action Buttons (AC5) ────────────────────────────────────────────────
+
+function showToast(message: string) {
+  const el = document.createElement('div')
+  el.textContent = message
+  el.style.cssText =
+    'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1e293b;color:#f8fafc;padding:10px 20px;border-radius:8px;z-index:9999;font-size:14px;pointer-events:none;'
+  document.body.appendChild(el)
+  setTimeout(() => el.remove(), 2500)
+}
+
+function EventActionButtons({
+  evt,
+  onCheckin,
+}: {
+  evt: ICalendarEvent
+  onCheckin: (id: string) => void
+}) {
+  const isDone = (evt as { status?: string }).status === 'done'
+
+  return (
+    <div className="flex items-center gap-1 mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
+      {!isDone && (
+        <button
+          aria-label={`Iniciar ${evt.title}`}
+          onClick={() => showToast('Timer — próximamente en Story 5.8')}
+          className="text-[10px] px-1.5 py-0.5 rounded bg-primary text-primary-foreground font-medium hover:bg-primary/90 transition-colors"
+        >
+          Iniciar
+        </button>
+      )}
+      <button
+        aria-label={`Check-in ${evt.title}`}
+        onClick={() => onCheckin(evt.id)}
+        className="text-[10px] px-1.5 py-0.5 rounded border border-border text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+      >
+        Check-in
+      </button>
+      <button
+        aria-label={`Omitir ${evt.title}`}
+        onClick={() => showToast('Omitir — próximamente en Story 5.7')}
+        className="text-[10px] px-1.5 py-0.5 rounded text-muted-foreground hover:text-foreground transition-colors"
+      >
+        Omitir
+      </button>
+    </div>
+  )
 }
 
 // ─── Sub-views ────────────────────────────────────────────────────────────────
@@ -96,8 +200,8 @@ function WeekView({ currentDate, events }: { currentDate: Date; events: ICalenda
             </div>
             {weekDays.map((day) => {
               const dayEvents = getEventsForDay(events, day).filter((e) => {
-                const h = e.start.getUTCHours()
-                return h === hour.getHours()
+                // AC3 fix: local hours for correct timezone display
+                return e.start.getHours() === hour.getHours()
               })
               return (
                 <div key={day.toISOString()} className="border-l border-border/50 p-0.5 relative">
@@ -178,13 +282,19 @@ function MonthView({ currentDate, events }: { currentDate: Date; events: ICalend
 }
 
 function DayView({ currentDate, events }: { currentDate: Date; events: ICalendarEvent[] }) {
+  const router = useRouter()
   const hours = getDayHourSlots(currentDate, 7, 22)
   const dayEvents = getEventsForDay(events, currentDate)
+
+  function handleCheckin(activityId: string) {
+    router.push(`/checkin?activityId=${activityId}`)
+  }
 
   return (
     <div className="overflow-auto">
       {hours.map((hour) => {
-        const slotEvents = dayEvents.filter((e) => e.start.getUTCHours() === hour.getHours())
+        // AC3 fix: local hours for correct timezone display
+        const slotEvents = dayEvents.filter((e) => e.start.getHours() === hour.getHours())
         return (
           <div key={hour.toISOString()} className="flex border-b border-border/50 min-h-14">
             <div className="w-16 p-1 pr-2 text-right text-xs text-muted-foreground shrink-0">
@@ -194,9 +304,10 @@ function DayView({ currentDate, events }: { currentDate: Date; events: ICalendar
               {slotEvents.map((evt) => (
                 <div
                   key={evt.id}
-                  className={`text-sm rounded border-l-2 px-2 py-1 ${EVENT_COLOR_CLASSES[evt.color ?? 'blue']}`}
+                  className={`group text-sm rounded border-l-2 px-2 py-1 ${EVENT_COLOR_CLASSES[evt.color ?? 'blue']}`}
                 >
                   <span className="font-medium">{evt.title}</span>
+                  <EventActionButtons evt={evt} onCheckin={handleCheckin} />
                 </div>
               ))}
             </div>
@@ -318,6 +429,9 @@ export function CalendarClient({ events = [], defaultView = 'week' }: CalendarCl
   const [view, setView] = useState<TCalendarView>(defaultView)
   const [currentDate, setCurrentDate] = useState(new Date())
 
+  // Events for the currently displayed day — used by Time Budget panel (AC4)
+  const currentDayEvents = getEventsForDay(events, currentDate)
+
   function navigate(direction: 'prev' | 'next' | 'today') {
     if (direction === 'today') {
       setCurrentDate(new Date())
@@ -390,6 +504,9 @@ export function CalendarClient({ events = [], defaultView = 'week' }: CalendarCl
           ))}
         </div>
       </div>
+
+      {/* Time Budget panel — only in Day view (AC4) */}
+      {view === 'day' && <TimeBudgetPanel events={currentDayEvents} />}
 
       {/* Calendar body */}
       <div className="flex-1 overflow-auto">
