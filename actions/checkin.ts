@@ -1,0 +1,266 @@
+'use server'
+
+// actions/checkin.ts
+// Server Actions for Daily Check-in accountability.
+// Handles confirming individual activities and bulk confirming habits.
+
+import { eq, and } from 'drizzle-orm'
+import { revalidatePath } from 'next/cache'
+import { createSupabaseServerClient } from '@/lib/supabase/server'
+import { db, assertDatabaseUrl } from '@/lib/db/client'
+import { stepsActivities } from '@/lib/db/schema/steps-activities'
+import { checkinResponses } from '@/lib/db/schema/checkin-responses'
+import { habits } from '@/lib/db/schema/habits'
+import { calculateStreak } from '@/lib/habits/streak-utils'
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+export interface ActionResult {
+  error: string | null
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+async function getAuthenticatedUserId(): Promise<string> {
+  const supabase = await createSupabaseServerClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) throw new Error('UNAUTHENTICATED')
+  return user.id
+}
+
+/** Returns YYYY-MM-DD string for yesterday in UTC */
+function getYesterdayStr(): string {
+  const d = new Date()
+  d.setUTCDate(d.getUTCDate() - 1)
+  return d.toISOString().slice(0, 10)
+}
+
+/** Returns today at UTC midnight as a Date (for postponed rescheduling) */
+function getTodayUTCMidnight(): Date {
+  const d = new Date()
+  d.setUTCHours(0, 0, 0, 0)
+  return d
+}
+
+/**
+ * Recalculates streak metrics for a habit after a check-in.
+ * Loads all completed checkin_responses for the habit, then calls calculateStreak.
+ *
+ * - completed: increment streak, update lastCompletedAt
+ * - skipped:   reset streakCurrent to 0, preserve streakBest
+ * - postponed: no streak change
+ */
+async function recalculateHabitStreak(
+  habitId: string,
+  userId: string,
+  checkinStatus: 'completed' | 'skipped' | 'postponed',
+  checkinDate: string
+): Promise<void> {
+  if (checkinStatus === 'postponed') return
+
+  // Load the habit to get rrule and current streakBest
+  const habitRows = await db
+    .select()
+    .from(habits)
+    .where(and(eq(habits.id, habitId), eq(habits.userId, userId)))
+    .limit(1)
+
+  if (habitRows.length === 0) return
+  const habit = habitRows[0]
+
+  if (checkinStatus === 'skipped') {
+    await db
+      .update(habits)
+      .set({ streakCurrent: 0, updatedAt: new Date() })
+      .where(eq(habits.id, habitId))
+    return
+  }
+
+  // completed: recalculate from all completed checkin_responses for this habit
+  const completedResponses = await db
+    .select({ checkinDate: checkinResponses.checkinDate })
+    .from(checkinResponses)
+    .innerJoin(stepsActivities, eq(checkinResponses.stepActivityId, stepsActivities.id))
+    .where(
+      and(
+        eq(stepsActivities.habitId, habitId),
+        eq(stepsActivities.userId, userId),
+        eq(checkinResponses.status, 'completed')
+      )
+    )
+
+  const completionDates = completedResponses.map((r) => new Date(r.checkinDate))
+  const { current, best } = calculateStreak(completionDates, habit.rrule)
+
+  await db
+    .update(habits)
+    .set({
+      streakCurrent: current,
+      streakBest: Math.max(best, habit.streakBest),
+      lastCompletedAt: checkinDate,
+      updatedAt: new Date(),
+    })
+    .where(eq(habits.id, habitId))
+}
+
+// ─── AC7 — confirmActivity ────────────────────────────────────────────────────
+
+/**
+ * Confirms a single activity with the given status.
+ *
+ * Flow:
+ * 1. Verify ownership (userId in steps_activities)
+ * 2. Upsert checkin_responses (stepActivityId + checkinDate = yesterday)
+ * 3. Update steps_activities.status
+ *    - completed  → 'completed', completedAt = now
+ *    - skipped    → 'skipped'
+ *    - postponed  → status stays 'pending', scheduledAt = today UTC midnight
+ * 4. If habitId exists, recalculate streak
+ * 5. revalidatePath('/')
+ */
+export async function confirmActivity(
+  activityId: string,
+  status: 'completed' | 'skipped' | 'postponed'
+): Promise<ActionResult> {
+  assertDatabaseUrl()
+  try {
+    const userId = await getAuthenticatedUserId()
+    const checkinDate = getYesterdayStr()
+
+    // 1. Verify ownership + load habitId
+    const activityRows = await db
+      .select({
+        id: stepsActivities.id,
+        userId: stepsActivities.userId,
+        habitId: stepsActivities.habitId,
+      })
+      .from(stepsActivities)
+      .where(and(eq(stepsActivities.id, activityId), eq(stepsActivities.userId, userId)))
+      .limit(1)
+
+    if (activityRows.length === 0) {
+      return { error: 'Actividad no encontrada' }
+    }
+
+    const activity = activityRows[0]
+
+    // 2. Upsert checkin_responses
+    await db
+      .insert(checkinResponses)
+      .values({
+        userId,
+        stepActivityId: activityId,
+        checkinDate,
+        status,
+      })
+      .onConflictDoUpdate({
+        target: [checkinResponses.stepActivityId, checkinResponses.checkinDate],
+        set: { status, userId },
+      })
+
+    // 3. Update steps_activities
+    if (status === 'completed') {
+      await db
+        .update(stepsActivities)
+        .set({ status: 'completed', completedAt: new Date(), updatedAt: new Date() })
+        .where(eq(stepsActivities.id, activityId))
+    } else if (status === 'skipped') {
+      await db
+        .update(stepsActivities)
+        .set({ status: 'skipped', updatedAt: new Date() })
+        .where(eq(stepsActivities.id, activityId))
+    } else {
+      // postponed: reschedule to today
+      await db
+        .update(stepsActivities)
+        .set({ scheduledAt: getTodayUTCMidnight(), updatedAt: new Date() })
+        .where(eq(stepsActivities.id, activityId))
+    }
+
+    // 4. Recalculate streak if this is a habit occurrence
+    if (activity.habitId) {
+      await recalculateHabitStreak(activity.habitId, userId, status, checkinDate)
+    }
+
+    revalidatePath('/')
+    return { error: null }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Error desconocido'
+    if (message === 'UNAUTHENTICATED') return { error: 'No autenticado' }
+    return { error: message }
+  }
+}
+
+// ─── AC4 — bulkConfirmHabits ──────────────────────────────────────────────────
+
+/**
+ * Confirms multiple habit activities at once, all as 'completed'.
+ * Recalculates streaks for each unique habit in parallel.
+ *
+ * Only processes activities that belong to the authenticated user.
+ */
+export async function bulkConfirmHabits(activityIds: string[]): Promise<ActionResult> {
+  assertDatabaseUrl()
+  try {
+    if (activityIds.length === 0) return { error: null }
+
+    const userId = await getAuthenticatedUserId()
+    const checkinDate = getYesterdayStr()
+
+    // Load and verify ownership of all activities
+    const activityRows = await db
+      .select({ id: stepsActivities.id, habitId: stepsActivities.habitId })
+      .from(stepsActivities)
+      .where(eq(stepsActivities.userId, userId))
+
+    const ownedIds = new Set(activityRows.map((r) => r.id))
+    const habitIdMap = new Map(activityRows.map((r) => [r.id, r.habitId]))
+
+    const validIds = activityIds.filter((id) => ownedIds.has(id))
+    if (validIds.length === 0) return { error: 'No se encontraron actividades válidas' }
+
+    // Upsert checkin_responses for each activity
+    await db
+      .insert(checkinResponses)
+      .values(
+        validIds.map((id) => ({
+          userId,
+          stepActivityId: id,
+          checkinDate,
+          status: 'completed' as const,
+        }))
+      )
+      .onConflictDoUpdate({
+        target: [checkinResponses.stepActivityId, checkinResponses.checkinDate],
+        set: { status: 'completed', userId },
+      })
+
+    // Update steps_activities.status for all valid ids
+    for (const id of validIds) {
+      await db
+        .update(stepsActivities)
+        .set({ status: 'completed', completedAt: new Date(), updatedAt: new Date() })
+        .where(eq(stepsActivities.id, id))
+    }
+
+    // Recalculate streaks for each unique habit
+    const uniqueHabitIds = new Set(
+      validIds.map((id) => habitIdMap.get(id)).filter((hId): hId is string => hId != null)
+    )
+
+    await Promise.all(
+      Array.from(uniqueHabitIds).map((habitId) =>
+        recalculateHabitStreak(habitId, userId, 'completed', checkinDate)
+      )
+    )
+
+    revalidatePath('/')
+    return { error: null }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Error desconocido'
+    if (message === 'UNAUTHENTICATED') return { error: 'No autenticado' }
+    return { error: message }
+  }
+}

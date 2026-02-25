@@ -4,10 +4,12 @@ import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { getUserAreas } from '@/lib/db/queries/areas'
 import { getRecentAreaScores } from '@/lib/db/queries/area-scores'
 import { getTimeInvestedByArea } from '@/lib/db/queries/time-entries'
+import { getUncheckedActivities } from '@/lib/db/queries/checkin'
 import { calculateGlobalScore } from '@/features/maslow/scoring'
 import { calculateTrend, scoreColorClass, scoreBgClass } from '@/lib/utils/trend'
 import { getAlerts } from '@/features/maslow/alerts'
 import { AlertBanner } from '@/components/shared/AlertBanner'
+import { DailyCheckinBanner } from '@/components/shared/DailyCheckinBanner'
 import type { MaslowLevel } from '@/lib/utils/maslow-weights'
 import type { Area } from '@/lib/db/schema/areas'
 import type { AreaScore } from '@/lib/db/schema/area-scores'
@@ -109,10 +111,16 @@ export default async function HomePage() {
     redirect('/login')
   }
 
-  const [userAreas, recentScores, timeMap] = await Promise.all([
+  // yesterday at UTC midnight — check-in is always about the previous day
+  const yesterday = new Date()
+  yesterday.setUTCDate(yesterday.getUTCDate() - 1)
+  yesterday.setUTCHours(0, 0, 0, 0)
+
+  const [userAreas, recentScores, timeMap, uncheckedActivities] = await Promise.all([
     getUserAreas(user.id),
     getRecentAreaScores(user.id, 7),
     getTimeInvestedByArea(user.id),
+    getUncheckedActivities(user.id, yesterday),
   ])
 
   if (userAreas.length === 0) {
@@ -131,6 +139,9 @@ export default async function HomePage() {
 
   return (
     <div className="space-y-8">
+      {/* Daily Check-in — máxima prioridad visual */}
+      <DailyCheckinBanner initialActivities={uncheckedActivities} />
+
       {/* Alertas activas */}
       <AlertBanner alerts={alerts} />
 
