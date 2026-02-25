@@ -1,0 +1,28 @@
+/*
+ * app/(app)/calendar/calendar.css
+ * CSS overrides for Tailwind v3→v4 compatibility.
+ *
+ * Analysis: The calendar in Story 5.1 is implemented using native Tailwind v4
+ * classes (bg-{color}/{opacity} syntax) — no v3 incompatibilities to patch.
+ *
+ * This file is intentionally minimal. If future Stories (5.2-5.9) add
+ * components from lramos33/big-calendar source that use v3-specific classes
+ * (bg-opacity-*, text-opacity-*, ring-offset-*), add overrides here.
+ *
+ * Pattern for v3→v4 migration:
+ *   v3: bg-blue-500 bg-opacity-20
+ *   v4: bg-blue-500/20   ← native, no override needed
+ *
+ *   v3: ring-offset-2 ring-offset-white
+ *   v4: outline-2 outline-offset-2   ← use outline instead
+ */
+
+/* Calendar container height utilities */
+.calendar-grid-cell {
+  min-height: 6rem; /* 96px — matches min-h-24 in Tailwind v4 */
+}
+
+/* Smooth hour slot hover (not available via Tailwind utility alone) */
+.calendar-hour-slot:hover {
+  background-color: color-mix(in srgb, var(--muted) 50%, transparent);
+}
