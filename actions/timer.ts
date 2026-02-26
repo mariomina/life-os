@@ -236,3 +236,37 @@ export async function getActiveTimersForActivities(
     return {}
   }
 }
+
+/**
+ * Returns the startedAt ISO timestamp for each active timer entry.
+ * Used on page load to seed the live clock without waiting for a Realtime event.
+ * Story 5.9 — Supabase Realtime para timer activo.
+ */
+export async function getActiveTimerStartTimes(
+  userId: string,
+  activityIds: string[]
+): Promise<Record<string, string>> {
+  if (activityIds.length === 0) return {}
+
+  try {
+    assertDatabaseUrl()
+    const rows = await db
+      .select({
+        stepActivityId: timeEntries.stepActivityId,
+        startedAt: timeEntries.startedAt,
+      })
+      .from(timeEntries)
+      .where(
+        and(
+          eq(timeEntries.userId, userId),
+          inArray(timeEntries.stepActivityId, activityIds),
+          eq(timeEntries.isActive, true)
+        )
+      )
+
+    return Object.fromEntries(rows.map((r) => [r.stepActivityId, r.startedAt.toISOString()]))
+  } catch (err) {
+    console.error('[getActiveTimerStartTimes] failed:', err)
+    return {}
+  }
+}

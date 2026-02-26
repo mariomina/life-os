@@ -9,7 +9,7 @@
 // Story 5.2: fix timezone (getUTCHours→getHours), Time Budget panel, action buttons.
 // Story 5.8: time tracking — start/stop/pause/resume, time totals in DayView.
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   format,
@@ -38,6 +38,7 @@ import {
 } from '@/lib/calendar/calendar-utils'
 import { NewActivityModal } from './NewActivityModal'
 import type { AreaOption } from '@/actions/calendar'
+import { createSupabaseBrowserClient } from '@/lib/supabase/client'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -54,6 +55,8 @@ interface CalendarClientProps {
   timeTotals?: Record<string, number>
   /** Record<activityId, entryId> — currently active timer entry per activity */
   initialActiveTimers?: Record<string, string>
+  /** Record<activityId, startedAt ISO> — start time of the active session (Story 5.9) */
+  initialTimerStartedAt?: Record<string, string>
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -65,6 +68,29 @@ export function formatSeconds(totalSeconds: number): string {
   const m = Math.floor((totalSeconds % 3600) / 60)
   if (h > 0) return m > 0 ? `${h}h ${m}min` : `${h}h`
   return `${m} min`
+}
+
+/**
+ * Formats elapsed seconds for a live timer. Shows seconds.
+ * Story 5.9 — AC1 (reloj en vivo con segundos visibles).
+ */
+export function formatElapsed(totalSeconds: number): string {
+  if (totalSeconds <= 0) return '0s'
+  const h = Math.floor(totalSeconds / 3600)
+  const m = Math.floor((totalSeconds % 3600) / 60)
+  const s = totalSeconds % 60
+  if (h > 0) return m > 0 ? `${h}h ${m}m` : `${h}h`
+  if (m > 0) return `${m}m ${s}s`
+  return `${s}s`
+}
+
+/**
+ * Calculates elapsed seconds between startedAt and now. Never returns negative.
+ * Story 5.9 — pure function for testability.
+ */
+export function calcElapsedSeconds(startedAt: Date, now: Date): number {
+  const elapsed = Math.floor((now.getTime() - startedAt.getTime()) / 1000)
+  return Math.max(0, elapsed)
 }
 
 // ─── Color mapping ────────────────────────────────────────────────────────────
@@ -419,6 +445,8 @@ function DayView({
   onDelete,
   timeTotals,
   activeTimers,
+  timerStartedAt,
+  elapsedTick,
   onStartTimer,
   onStopTimer,
   onPauseTimer,
@@ -429,6 +457,10 @@ function DayView({
   onDelete: (id: string) => void
   timeTotals: Record<string, number>
   activeTimers: Map<string, TimerState>
+  /** Map<activityId, startedAt Date> — for live elapsed calculation (Story 5.9) */
+  timerStartedAt: Map<string, Date>
+  /** Timestamp updated by setInterval — causes re-render every second (Story 5.9) */
+  elapsedTick: number
   onStartTimer: (activityId: string) => void
   onStopTimer: (activityId: string, entryId: string) => void
   onPauseTimer: (activityId: string, entryId: string) => void
@@ -454,8 +486,20 @@ function DayView({
             </div>
             <div className="flex-1 border-l border-border/50 p-1 space-y-0.5">
               {slotEvents.map((evt) => {
-                const totalSeconds = timeTotals[evt.id] ?? 0
-                const formattedTime = formatSeconds(totalSeconds)
+                const completedSeconds = timeTotals[evt.id] ?? 0
+                const startedAt = timerStartedAt.get(evt.id)
+                const isRunningTimer =
+                  activeTimers.get(evt.id) !== undefined &&
+                  !activeTimers.get(evt.id)!.isPaused &&
+                  startedAt !== undefined
+                // Live elapsed: completed + currently running session (Story 5.9)
+                const elapsedSeconds = isRunningTimer
+                  ? calcElapsedSeconds(startedAt!, new Date(elapsedTick))
+                  : 0
+                const totalForDisplay = completedSeconds + elapsedSeconds
+                const formattedTime = isRunningTimer
+                  ? formatElapsed(totalForDisplay)
+                  : formatSeconds(completedSeconds)
                 return (
                   <div
                     key={evt.id}
@@ -464,7 +508,9 @@ function DayView({
                     <div className="flex items-center gap-2">
                       <span className="font-medium">{evt.title}</span>
                       {formattedTime && (
-                        <span className="text-[10px] text-muted-foreground font-mono">
+                        <span
+                          className={`text-[10px] font-mono ${isRunningTimer ? 'text-primary animate-pulse' : 'text-muted-foreground'}`}
+                        >
                           ⏱ {formattedTime}
                         </span>
                       )}
@@ -617,6 +663,7 @@ export function CalendarClient({
   areas = [],
   timeTotals = {},
   initialActiveTimers = {},
+  initialTimerStartedAt = {},
 }: CalendarClientProps) {
   const [view, setView] = useState<TCalendarView>(defaultView)
   const [currentDate, setCurrentDate] = useState(new Date())
@@ -632,6 +679,104 @@ export function CalendarClient({
         ])
       )
   )
+
+  // Story 5.9 — Map<activityId, Date> for startedAt of the active session
+  const [timerStartedAt, setTimerStartedAt] = useState<Map<string, Date>>(
+    () =>
+      new Map(
+        Object.entries(initialTimerStartedAt).map(([activityId, iso]) => [
+          activityId,
+          new Date(iso),
+        ])
+      )
+  )
+
+  // Story 5.9 — Tick state: updated every second when there are active timers
+  const [elapsedTick, setElapsedTick] = useState(() => Date.now())
+
+  // Story 5.9 — AC1: Live clock — setInterval every 1s while any non-paused timer runs
+  useEffect(() => {
+    const hasRunning = Array.from(activeTimers.values()).some((t) => !t.isPaused)
+    if (!hasRunning) return
+    const interval = setInterval(() => setElapsedTick(Date.now()), 1000)
+    return () => clearInterval(interval)
+  }, [activeTimers])
+
+  // Story 5.9 — AC2: Supabase Realtime subscription for time_entries changes
+  useEffect(() => {
+    const supabase = createSupabaseBrowserClient()
+
+    const channel = supabase
+      .channel('timer-realtime-calendar')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'time_entries',
+        },
+        (payload) => {
+          const record = (payload.new ?? payload.old) as {
+            step_activity_id?: string
+            is_active?: boolean
+            started_at?: string
+          }
+          const activityId = record?.step_activity_id
+          if (!activityId) return
+
+          if (payload.eventType === 'INSERT' && record.is_active) {
+            // New active timer started (possibly from another tab)
+            const entryId = (payload.new as { id?: string }).id
+            if (entryId) {
+              setActiveTimers((prev) => new Map(prev).set(activityId, { entryId, isPaused: false }))
+              if (record.started_at) {
+                setTimerStartedAt((prev) =>
+                  new Map(prev).set(activityId, new Date(record.started_at!))
+                )
+              }
+            }
+          } else if (payload.eventType === 'UPDATE') {
+            const updated = payload.new as {
+              step_activity_id?: string
+              is_active?: boolean
+              paused_at?: string | null
+              started_at?: string
+              id?: string
+            }
+            if (!updated.is_active) {
+              // Timer stopped or paused
+              const hasPausedAt = updated.paused_at != null
+              if (hasPausedAt) {
+                // Paused: keep entry but mark isPaused
+                const currentState = activeTimers.get(activityId)
+                if (currentState) {
+                  setActiveTimers((prev) =>
+                    new Map(prev).set(activityId, { ...currentState, isPaused: true })
+                  )
+                }
+              } else {
+                // Stopped: remove from active timers and startedAt
+                setActiveTimers((prev) => {
+                  const m = new Map(prev)
+                  m.delete(activityId)
+                  return m
+                })
+                setTimerStartedAt((prev) => {
+                  const m = new Map(prev)
+                  m.delete(activityId)
+                  return m
+                })
+              }
+            }
+          }
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [activeTimers])
 
   // Events for the currently displayed day — used by Time Budget panel (AC4)
   const currentDayEvents = getEventsForDay(events, currentDate)
@@ -677,9 +822,12 @@ export function CalendarClient({
         if (result.error) {
           showToast(`Error: ${result.error}`)
         } else if (result.entryId) {
+          const now = new Date()
           setActiveTimers((prev) =>
             new Map(prev).set(activityId, { entryId: result.entryId!, isPaused: false })
           )
+          // Story 5.9: track startedAt for live elapsed
+          setTimerStartedAt((prev) => new Map(prev).set(activityId, now))
         }
       })
     })
@@ -692,6 +840,12 @@ export function CalendarClient({
           showToast(`Error: ${result.error}`)
         } else {
           setActiveTimers((prev) => {
+            const m = new Map(prev)
+            m.delete(activityId)
+            return m
+          })
+          // Story 5.9: clear startedAt on stop
+          setTimerStartedAt((prev) => {
             const m = new Map(prev)
             m.delete(activityId)
             return m
@@ -710,6 +864,12 @@ export function CalendarClient({
           showToast(`Error: ${result.error}`)
         } else {
           setActiveTimers((prev) => new Map(prev).set(activityId, { entryId, isPaused: true }))
+          // Story 5.9: clear startedAt when paused (elapsed clock stops)
+          setTimerStartedAt((prev) => {
+            const m = new Map(prev)
+            m.delete(activityId)
+            return m
+          })
         }
       })
     })
@@ -721,9 +881,12 @@ export function CalendarClient({
         if (result.error) {
           showToast(`Error: ${result.error}`)
         } else if (result.entryId) {
+          const now = new Date()
           setActiveTimers((prev) =>
             new Map(prev).set(activityId, { entryId: result.entryId!, isPaused: false })
           )
+          // Story 5.9: new session startedAt on resume
+          setTimerStartedAt((prev) => new Map(prev).set(activityId, now))
         }
       })
     })
@@ -807,6 +970,8 @@ export function CalendarClient({
             onDelete={handleDelete}
             timeTotals={timeTotals}
             activeTimers={activeTimers}
+            timerStartedAt={timerStartedAt}
+            elapsedTick={elapsedTick}
             onStartTimer={handleStartTimer}
             onStopTimer={handleStopTimer}
             onPauseTimer={handlePauseTimer}
