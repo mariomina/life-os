@@ -27,7 +27,7 @@ import {
   isSameMonth,
 } from 'date-fns'
 import { es } from 'date-fns/locale'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Plus } from 'lucide-react'
 import type { TCalendarView, ICalendarEvent } from '@/lib/calendar/calendar-utils'
 import {
   formatDateHeader,
@@ -35,12 +35,15 @@ import {
   getDayHourSlots,
   getEventsForDay,
 } from '@/lib/calendar/calendar-utils'
+import { NewActivityModal } from './NewActivityModal'
+import type { AreaOption } from '@/actions/calendar'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface CalendarClientProps {
   events?: ICalendarEvent[]
   defaultView?: TCalendarView
+  areas?: AreaOption[]
 }
 
 // ─── Color mapping ────────────────────────────────────────────────────────────
@@ -170,11 +173,14 @@ function showToast(message: string) {
 function EventActionButtons({
   evt,
   onCheckin,
+  onDelete,
 }: {
   evt: ICalendarEvent
   onCheckin: (id: string) => void
+  onDelete?: (id: string) => void
 }) {
   const isDone = (evt as { status?: string }).status === 'done'
+  const isPlanned = (evt as { planned?: boolean }).planned !== false
 
   return (
     <div className="flex items-center gap-1 mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -194,13 +200,19 @@ function EventActionButtons({
       >
         Check-in
       </button>
-      <button
-        aria-label={`Omitir ${evt.title}`}
-        onClick={() => showToast('Omitir — próximamente en Story 5.7')}
-        className="text-[10px] px-1.5 py-0.5 rounded text-muted-foreground hover:text-foreground transition-colors"
-      >
-        Omitir
-      </button>
+      {!isPlanned && onDelete && (
+        <button
+          aria-label={`Eliminar ${evt.title}`}
+          onClick={() => {
+            if (window.confirm(`¿Eliminar "${evt.title}"?`)) {
+              onDelete(evt.id)
+            }
+          }}
+          className="text-[10px] px-1.5 py-0.5 rounded text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
+        >
+          Eliminar
+        </button>
+      )}
     </div>
   )
 }
@@ -334,7 +346,15 @@ function MonthView({ currentDate, events }: { currentDate: Date; events: ICalend
   )
 }
 
-function DayView({ currentDate, events }: { currentDate: Date; events: ICalendarEvent[] }) {
+function DayView({
+  currentDate,
+  events,
+  onDelete,
+}: {
+  currentDate: Date
+  events: ICalendarEvent[]
+  onDelete: (id: string) => void
+}) {
   const router = useRouter()
   const hours = getDayHourSlots(currentDate, 7, 22)
   const dayEvents = getEventsForDay(events, currentDate)
@@ -360,7 +380,7 @@ function DayView({ currentDate, events }: { currentDate: Date; events: ICalendar
                   className={`group text-sm rounded border-l-2 px-2 py-1 ${EVENT_COLOR_CLASSES[evt.color ?? 'blue']}`}
                 >
                   <span className="font-medium">{evt.title}</span>
-                  <EventActionButtons evt={evt} onCheckin={handleCheckin} />
+                  <EventActionButtons evt={evt} onCheckin={handleCheckin} onDelete={onDelete} />
                 </div>
               ))}
             </div>
@@ -492,9 +512,14 @@ const VIEW_LABELS: Record<TCalendarView, string> = {
 
 const AVAILABLE_VIEWS: TCalendarView[] = ['day', 'week', 'month', 'year', 'agenda']
 
-export function CalendarClient({ events = [], defaultView = 'week' }: CalendarClientProps) {
+export function CalendarClient({
+  events = [],
+  defaultView = 'week',
+  areas = [],
+}: CalendarClientProps) {
   const [view, setView] = useState<TCalendarView>(defaultView)
   const [currentDate, setCurrentDate] = useState(new Date())
+  const [isModalOpen, setIsModalOpen] = useState(false)
 
   // Events for the currently displayed day — used by Time Budget panel (AC4)
   const currentDayEvents = getEventsForDay(events, currentDate)
@@ -520,6 +545,15 @@ export function CalendarClient({ events = [], defaultView = 'week' }: CalendarCl
         default:
           return prev
       }
+    })
+  }
+
+  function handleDelete(activityId: string) {
+    // deleteActivity is a Server Action — called via startTransition in an inline async
+    import('@/actions/calendar').then(({ deleteActivity }) => {
+      deleteActivity(activityId).then((result) => {
+        if (result.error) showToast(`Error: ${result.error}`)
+      })
     })
   }
 
@@ -554,21 +588,33 @@ export function CalendarClient({ events = [], defaultView = 'week' }: CalendarCl
           </h2>
         </div>
 
-        {/* View selector */}
-        <div className="flex items-center gap-1 rounded-lg border border-border p-1">
-          {AVAILABLE_VIEWS.map((v) => (
-            <button
-              key={v}
-              onClick={() => setView(v)}
-              className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
-                view === v
-                  ? 'bg-primary text-primary-foreground'
-                  : 'text-muted-foreground hover:text-foreground hover:bg-muted'
-              }`}
-            >
-              {VIEW_LABELS[v]}
-            </button>
-          ))}
+        {/* Right side: Nueva Actividad + View selector */}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setIsModalOpen(true)}
+            aria-label="Nueva Actividad"
+            className="flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Nueva Actividad
+          </button>
+
+          {/* View selector */}
+          <div className="flex items-center gap-1 rounded-lg border border-border p-1">
+            {AVAILABLE_VIEWS.map((v) => (
+              <button
+                key={v}
+                onClick={() => setView(v)}
+                className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
+                  view === v
+                    ? 'bg-primary text-primary-foreground'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                }`}
+              >
+                {VIEW_LABELS[v]}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -582,10 +628,20 @@ export function CalendarClient({ events = [], defaultView = 'week' }: CalendarCl
       <div className="flex-1 overflow-auto">
         {view === 'week' && <WeekView currentDate={currentDate} events={events} />}
         {view === 'month' && <MonthView currentDate={currentDate} events={events} />}
-        {view === 'day' && <DayView currentDate={currentDate} events={events} />}
+        {view === 'day' && (
+          <DayView currentDate={currentDate} events={events} onDelete={handleDelete} />
+        )}
         {view === 'year' && <YearView currentDate={currentDate} events={events} />}
         {view === 'agenda' && <AgendaView currentDate={currentDate} events={events} />}
       </div>
+
+      {/* New Activity Modal (AC1, AC2 Story 5.7) */}
+      <NewActivityModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        defaultDate={currentDate}
+        areas={areas}
+      />
     </div>
   )
 }

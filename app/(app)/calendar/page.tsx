@@ -1,11 +1,13 @@
 // app/(app)/calendar/page.tsx
 // Server Component — auth check + calendar data fetch.
 // Delegates rendering to CalendarClient (Client Component).
+// Story 5.7: passes areas list for NewActivityModal.
 
 import { redirect } from 'next/navigation'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { CalendarClient } from './_components/CalendarClient'
 import { getActivitiesForYear } from '@/lib/db/queries/calendar'
+import { getAreasForUser } from '@/actions/calendar'
 import type { ICalendarEvent } from '@/lib/calendar/calendar-utils'
 
 export default async function CalendarPage() {
@@ -18,11 +20,15 @@ export default async function CalendarPage() {
     redirect('/login')
   }
 
-  // Fetch today's activities; fall back to empty array on error (AC2)
+  // Fetch activities and areas in parallel; fall back to empty arrays on error
   let events: ICalendarEvent[] = []
-  try {
-    const activities = await getActivitiesForYear(user.id, new Date())
-    events = activities
+  const [activitiesResult, areas] = await Promise.allSettled([
+    getActivitiesForYear(user.id, new Date()),
+    getAreasForUser(),
+  ])
+
+  if (activitiesResult.status === 'fulfilled') {
+    events = activitiesResult.value
       .filter((a) => a.scheduledAt != null)
       .map((a) => {
         const start = new Date(a.scheduledAt)
@@ -36,9 +42,11 @@ export default async function CalendarPage() {
           description: a.areaName ?? undefined,
         }
       })
-  } catch (err) {
-    console.error('[CalendarPage] getActivitiesForYear failed:', err)
+  } else {
+    console.error('[CalendarPage] getActivitiesForYear failed:', activitiesResult.reason)
   }
+
+  const areasData = areas.status === 'fulfilled' ? areas.value : []
 
   return (
     <div className="flex flex-col gap-4 h-[calc(100vh-8rem)]">
@@ -51,7 +59,7 @@ export default async function CalendarPage() {
       </section>
 
       {/* Calendar */}
-      <CalendarClient events={events} defaultView="week" />
+      <CalendarClient events={events} defaultView="week" areas={areasData} />
     </div>
   )
 }
