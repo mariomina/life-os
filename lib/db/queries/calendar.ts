@@ -180,3 +180,63 @@ export async function getActivitiesForWeek(
     habitId: row.activity.habitId,
   }))
 }
+
+/**
+ * Returns all steps_activities for a user scheduled within the calendar month (UTC boundaries)
+ * that contains the given date. Shares the same interface as getActivitiesForDay/Week.
+ * Joins areas (for name + maslow color) and habits (for title).
+ * Orders by scheduledAt ASC.
+ *
+ * Uses Date.UTC() arithmetic directly — avoids date-fns local timezone drift (Story 5.3 gotcha).
+ * Date.UTC(year, month+1, 0) resolves to the last day of `month` (standard JS trick).
+ *
+ * @param userId - The authenticated user's UUID
+ * @param date   - Any moment within the target month (UTC month boundaries are used)
+ */
+export async function getActivitiesForMonth(
+  userId: string,
+  date: Date
+): Promise<ActivityForCalendar[]> {
+  assertDatabaseUrl()
+
+  // Compute month boundaries in UTC.
+  // Month: day 1 00:00:00.000Z – last day 23:59:59.999Z
+  const year = date.getUTCFullYear()
+  const month = date.getUTCMonth() // 0-indexed
+
+  const rangeStart = new Date(Date.UTC(year, month, 1, 0, 0, 0, 0))
+  // Date.UTC(year, month+1, 0) = last day of `month` (day 0 of next month rolls back)
+  const lastDay = new Date(Date.UTC(year, month + 1, 0)).getUTCDate()
+  const rangeEnd = new Date(Date.UTC(year, month, lastDay, 23, 59, 59, 999))
+
+  const rows = await db
+    .select({
+      activity: stepsActivities,
+      areaName: areas.name,
+      areaLevel: areas.maslowLevel,
+      habitTitle: habits.title,
+    })
+    .from(stepsActivities)
+    .leftJoin(areas, eq(stepsActivities.areaId, areas.id))
+    .leftJoin(habits, eq(stepsActivities.habitId, habits.id))
+    .where(
+      and(
+        eq(stepsActivities.userId, userId),
+        gte(stepsActivities.scheduledAt, rangeStart),
+        lte(stepsActivities.scheduledAt, rangeEnd)
+      )
+    )
+    .orderBy(asc(stepsActivities.scheduledAt))
+
+  return rows.map((row) => ({
+    id: row.activity.id,
+    title: row.activity.title,
+    scheduledAt: row.activity.scheduledAt!,
+    scheduledDurationMinutes: row.activity.scheduledDurationMinutes,
+    status: row.activity.status,
+    areaName: row.areaName ?? null,
+    areaColor: maslowLevelToColor(row.areaLevel ?? null),
+    habitTitle: row.habitTitle ?? null,
+    habitId: row.activity.habitId,
+  }))
+}

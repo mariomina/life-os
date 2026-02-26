@@ -5,7 +5,7 @@
 import { redirect } from 'next/navigation'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { CalendarClient } from './_components/CalendarClient'
-import { getActivitiesForWeek } from '@/lib/db/queries/calendar'
+import { getActivitiesForMonth } from '@/lib/db/queries/calendar'
 import type { ICalendarEvent } from '@/lib/calendar/calendar-utils'
 
 export default async function CalendarPage() {
@@ -21,7 +21,7 @@ export default async function CalendarPage() {
   // Fetch today's activities; fall back to empty array on error (AC2)
   let events: ICalendarEvent[] = []
   try {
-    const activities = await getActivitiesForWeek(user.id, new Date())
+    const activities = await getActivitiesForMonth(user.id, new Date())
     events = activities
       .filter((a) => a.scheduledAt != null)
       .map((a) => {
@@ -37,7 +37,7 @@ export default async function CalendarPage() {
         }
       })
   } catch (err) {
-    console.error('[CalendarPage] getActivitiesForWeek failed:', err)
+    console.error('[CalendarPage] getActivitiesForMonth failed:', err)
   }
 
   return (

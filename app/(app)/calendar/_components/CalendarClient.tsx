@@ -302,6 +302,10 @@ function MonthView({ currentDate, events }: { currentDate: Date; events: ICalend
               >
                 {format(day, 'd')}
               </span>
+              {/* Dot indicator (AC3 Story 5.4) — visible only for days in current month with events */}
+              {inCurrentMonth && dayEvents.length > 0 && (
+                <div className="w-1 h-1 rounded-full bg-primary mx-auto mt-0.5" />
+              )}
               <div className="mt-1 space-y-0.5">
                 {dayEvents.slice(0, 3).map((evt) => (
                   <div

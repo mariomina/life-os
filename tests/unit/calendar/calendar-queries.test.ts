@@ -160,6 +160,68 @@ describe('getActivitiesForWeek — UTC week-range filter', () => {
   })
 })
 
+// ─── Tests: getActivitiesForMonth — month-range filter (AC1 Story 5.4) ────────
+
+/** Mimics the month-range filter applied in getActivitiesForMonth (UTC) */
+function isInMonth(scheduledAt: Date, date: Date): boolean {
+  const year = date.getUTCFullYear()
+  const month = date.getUTCMonth()
+  const rangeStart = new Date(Date.UTC(year, month, 1, 0, 0, 0, 0))
+  const lastDay = new Date(Date.UTC(year, month + 1, 0)).getUTCDate()
+  const rangeEnd = new Date(Date.UTC(year, month, lastDay, 23, 59, 59, 999))
+  return scheduledAt >= rangeStart && scheduledAt <= rangeEnd
+}
+
+// Target month: January 2024 (31 days). Using Jan 15 as reference date.
+const TARGET_MONTH_DATE = new Date('2024-01-15T00:00:00Z')
+
+describe('getActivitiesForMonth — UTC month-range filter', () => {
+  it('includes activity scheduled at Jan 1 00:00:00Z (month start)', () => {
+    const act = makeActivity({ scheduledAt: new Date('2024-01-01T00:00:00Z') })
+    expect(isInMonth(act.scheduledAt, TARGET_MONTH_DATE)).toBe(true)
+  })
+
+  it('includes activity scheduled at Jan 31 23:59:59.999Z (month end)', () => {
+    const act = makeActivity({ scheduledAt: new Date('2024-01-31T23:59:59.999Z') })
+    expect(isInMonth(act.scheduledAt, TARGET_MONTH_DATE)).toBe(true)
+  })
+
+  it('excludes activity scheduled at Dec 31 23:59:59.999Z (previous month)', () => {
+    const act = makeActivity({ scheduledAt: new Date('2023-12-31T23:59:59.999Z') })
+    expect(isInMonth(act.scheduledAt, TARGET_MONTH_DATE)).toBe(false)
+  })
+
+  it('excludes activity scheduled at Feb 1 00:00:00Z (next month)', () => {
+    const act = makeActivity({ scheduledAt: new Date('2024-02-01T00:00:00Z') })
+    expect(isInMonth(act.scheduledAt, TARGET_MONTH_DATE)).toBe(false)
+  })
+
+  it('handles February 2024 (leap year — 29 days): includes Feb 29 23:59:59.999Z', () => {
+    const feb2024 = new Date('2024-02-15T00:00:00Z')
+    const act = makeActivity({ scheduledAt: new Date('2024-02-29T23:59:59.999Z') })
+    expect(isInMonth(act.scheduledAt, feb2024)).toBe(true)
+  })
+
+  it('handles February 2023 (non-leap — 28 days): excludes Feb 29 (does not exist → Mar 1)', () => {
+    const feb2023 = new Date('2023-02-15T00:00:00Z')
+    // Date.UTC(2023, 2, 0) = Feb 28 → last day is 28
+    const act = makeActivity({ scheduledAt: new Date('2023-03-01T00:00:00Z') })
+    expect(isInMonth(act.scheduledAt, feb2023)).toBe(false)
+  })
+
+  it('handles April 2024 (30-day month): includes Apr 30 23:59:59.999Z', () => {
+    const apr2024 = new Date('2024-04-15T00:00:00Z')
+    const act = makeActivity({ scheduledAt: new Date('2024-04-30T23:59:59.999Z') })
+    expect(isInMonth(act.scheduledAt, apr2024)).toBe(true)
+  })
+
+  it('handles April 2024 (30-day month): excludes May 1 00:00:00Z', () => {
+    const apr2024 = new Date('2024-04-15T00:00:00Z')
+    const act = makeActivity({ scheduledAt: new Date('2024-05-01T00:00:00Z') })
+    expect(isInMonth(act.scheduledAt, apr2024)).toBe(false)
+  })
+})
+
 // ─── Tests: maslowLevelToColor (AC7) ──────────────────────────────────────────
 
 describe('maslowLevelToColor', () => {
