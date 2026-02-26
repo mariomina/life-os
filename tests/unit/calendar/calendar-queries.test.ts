@@ -222,6 +222,46 @@ describe('getActivitiesForMonth — UTC month-range filter', () => {
   })
 })
 
+// ─── Tests: getActivitiesForYear — year-range filter (AC1 Story 5.5) ──────────
+
+/** Mimics the year-range filter applied in getActivitiesForYear (UTC) */
+function isInYear(scheduledAt: Date, date: Date): boolean {
+  const year = date.getUTCFullYear()
+  const rangeStart = new Date(Date.UTC(year, 0, 1, 0, 0, 0, 0))
+  const rangeEnd = new Date(Date.UTC(year, 11, 31, 23, 59, 59, 999))
+  return scheduledAt >= rangeStart && scheduledAt <= rangeEnd
+}
+
+// Target year: 2024. Using Jun 15 as reference date.
+const TARGET_YEAR_DATE = new Date('2024-06-15T00:00:00Z')
+
+describe('getActivitiesForYear — UTC year-range filter', () => {
+  it('includes activity scheduled at Jan 1 00:00:00Z (year start)', () => {
+    const act = makeActivity({ scheduledAt: new Date('2024-01-01T00:00:00Z') })
+    expect(isInYear(act.scheduledAt, TARGET_YEAR_DATE)).toBe(true)
+  })
+
+  it('includes activity scheduled at Dec 31 23:59:59.999Z (year end)', () => {
+    const act = makeActivity({ scheduledAt: new Date('2024-12-31T23:59:59.999Z') })
+    expect(isInYear(act.scheduledAt, TARGET_YEAR_DATE)).toBe(true)
+  })
+
+  it('excludes activity scheduled at Dec 31 23:59:59.999Z of previous year', () => {
+    const act = makeActivity({ scheduledAt: new Date('2023-12-31T23:59:59.999Z') })
+    expect(isInYear(act.scheduledAt, TARGET_YEAR_DATE)).toBe(false)
+  })
+
+  it('excludes activity scheduled at Jan 1 00:00:00Z of next year', () => {
+    const act = makeActivity({ scheduledAt: new Date('2025-01-01T00:00:00Z') })
+    expect(isInYear(act.scheduledAt, TARGET_YEAR_DATE)).toBe(false)
+  })
+
+  it('handles leap year 2024: includes Feb 29 23:59:59.999Z', () => {
+    const act = makeActivity({ scheduledAt: new Date('2024-02-29T23:59:59.999Z') })
+    expect(isInYear(act.scheduledAt, TARGET_YEAR_DATE)).toBe(true)
+  })
+})
+
 // ─── Tests: maslowLevelToColor (AC7) ──────────────────────────────────────────
 
 describe('maslowLevelToColor', () => {

@@ -240,3 +240,59 @@ export async function getActivitiesForMonth(
     habitId: row.activity.habitId,
   }))
 }
+
+/**
+ * Returns all steps_activities for a user scheduled within the calendar year (UTC boundaries)
+ * that contains the given date. Shares the same interface as getActivitiesForDay/Week/Month.
+ * Joins areas (for name + maslow color) and habits (for title).
+ * Orders by scheduledAt ASC.
+ *
+ * Uses Date.UTC() arithmetic directly — avoids date-fns local timezone drift (Story 5.3 gotcha).
+ *
+ * @param userId - The authenticated user's UUID
+ * @param date   - Any moment within the target year (UTC year boundaries are used)
+ */
+export async function getActivitiesForYear(
+  userId: string,
+  date: Date
+): Promise<ActivityForCalendar[]> {
+  assertDatabaseUrl()
+
+  // Compute year boundaries in UTC.
+  // Year: Jan 1 00:00:00.000Z – Dec 31 23:59:59.999Z
+  const year = date.getUTCFullYear()
+
+  const rangeStart = new Date(Date.UTC(year, 0, 1, 0, 0, 0, 0)) // Jan 1
+  const rangeEnd = new Date(Date.UTC(year, 11, 31, 23, 59, 59, 999)) // Dec 31
+
+  const rows = await db
+    .select({
+      activity: stepsActivities,
+      areaName: areas.name,
+      areaLevel: areas.maslowLevel,
+      habitTitle: habits.title,
+    })
+    .from(stepsActivities)
+    .leftJoin(areas, eq(stepsActivities.areaId, areas.id))
+    .leftJoin(habits, eq(stepsActivities.habitId, habits.id))
+    .where(
+      and(
+        eq(stepsActivities.userId, userId),
+        gte(stepsActivities.scheduledAt, rangeStart),
+        lte(stepsActivities.scheduledAt, rangeEnd)
+      )
+    )
+    .orderBy(asc(stepsActivities.scheduledAt))
+
+  return rows.map((row) => ({
+    id: row.activity.id,
+    title: row.activity.title,
+    scheduledAt: row.activity.scheduledAt!,
+    scheduledDurationMinutes: row.activity.scheduledDurationMinutes,
+    status: row.activity.status,
+    areaName: row.areaName ?? null,
+    areaColor: maslowLevelToColor(row.areaLevel ?? null),
+    habitTitle: row.habitTitle ?? null,
+    habitId: row.activity.habitId,
+  }))
+}

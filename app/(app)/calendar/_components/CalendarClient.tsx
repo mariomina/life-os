@@ -432,20 +432,24 @@ function YearView({ currentDate, events }: { currentDate: Date; events: ICalenda
                 </div>
               ))}
               {days.map((day) => {
-                const hasEvents = getEventsForDay(events, day).length > 0
+                const dayEventCount = getEventsForDay(events, day).length
                 const inMonth = isSameMonth(day, monthDate)
+                // Heatmap: 4 intensity levels based on event count (AC3 Story 5.5)
+                const heatClass = isToday(day)
+                  ? 'bg-primary text-primary-foreground font-bold'
+                  : !inMonth
+                    ? 'text-muted-foreground/30'
+                    : dayEventCount === 0
+                      ? 'text-foreground'
+                      : dayEventCount <= 2
+                        ? 'bg-primary/30 text-foreground'
+                        : dayEventCount <= 5
+                          ? 'bg-primary/60 text-foreground'
+                          : 'bg-primary text-primary-foreground'
                 return (
                   <div
                     key={day.toISOString()}
-                    className={`text-center text-[10px] leading-5 rounded-full ${
-                      isToday(day)
-                        ? 'bg-primary text-primary-foreground font-bold'
-                        : hasEvents && inMonth
-                          ? 'bg-blue-200 dark:bg-blue-900 text-blue-800 dark:text-blue-100'
-                          : inMonth
-                            ? 'text-foreground'
-                            : 'text-muted-foreground/30'
-                    }`}
+                    className={`text-center text-[10px] leading-5 rounded-full ${heatClass}`}
                   >
                     {inMonth ? format(day, 'd') : ''}
                   </div>
