@@ -82,11 +82,18 @@ export function calcWeeklyTimeBudget(events: ICalendarEvent[]) {
   }
 }
 
-function formatMinutes(minutes: number): string {
+export function formatMinutes(minutes: number): string {
   const abs = Math.abs(minutes)
   const h = Math.floor(abs / 60)
   const m = Math.round(abs % 60)
   return `${h}h ${m}m`
+}
+
+function formatDuration(minutes: number): string {
+  if (minutes < 60) return `${minutes}m`
+  const h = Math.floor(minutes / 60)
+  const m = Math.round(minutes % 60)
+  return m === 0 ? `${h}h` : `${h}h ${m}m`
 }
 
 // ─── Time Budget Panel (AC4) ───────────────────────────────────────────────────
@@ -397,15 +404,25 @@ function AgendaView({ currentDate, events }: { currentDate: Date; events: ICalen
             )}
           </div>
           <div className="space-y-1 pl-4">
-            {dayEvents.map((evt) => (
-              <div
-                key={evt.id}
-                className={`text-sm rounded border-l-2 px-3 py-1.5 flex items-center gap-3 ${EVENT_COLOR_CLASSES[evt.color ?? 'blue']}`}
-              >
-                <span className="text-xs text-muted-foreground">{format(evt.start, 'HH:mm')}</span>
-                <span className="font-medium">{evt.title}</span>
-              </div>
-            ))}
+            {dayEvents.map((evt) => {
+              const durationMin = Math.round((evt.end.getTime() - evt.start.getTime()) / 60000)
+              return (
+                <div
+                  key={evt.id}
+                  className={`text-sm rounded border-l-2 px-3 py-1.5 flex items-center gap-3 ${EVENT_COLOR_CLASSES[evt.color ?? 'blue']}`}
+                >
+                  <span className="text-xs text-muted-foreground shrink-0">
+                    {format(evt.start, 'HH:mm')} · {formatDuration(durationMin)}
+                  </span>
+                  <span className="font-medium">{evt.title}</span>
+                  {evt.description && (
+                    <span className="text-xs text-muted-foreground/70 ml-auto shrink-0">
+                      {evt.description}
+                    </span>
+                  )}
+                </div>
+              )
+            })}
           </div>
         </div>
       ))}
