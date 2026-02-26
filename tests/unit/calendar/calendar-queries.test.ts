@@ -13,6 +13,35 @@ function isInDay(scheduledAt: Date, date: Date): boolean {
   return scheduledAt >= dayStart && scheduledAt <= dayEnd
 }
 
+/** Mimics the UTC week-range filter applied in getActivitiesForWeek (ISO Mon–Sun, UTC) */
+function isInWeek(scheduledAt: Date, date: Date): boolean {
+  const utcDay = date.getUTCDay()
+  const daysFromMonday = (utcDay + 6) % 7
+  const rangeStart = new Date(
+    Date.UTC(
+      date.getUTCFullYear(),
+      date.getUTCMonth(),
+      date.getUTCDate() - daysFromMonday,
+      0,
+      0,
+      0,
+      0
+    )
+  )
+  const rangeEnd = new Date(
+    Date.UTC(
+      date.getUTCFullYear(),
+      date.getUTCMonth(),
+      date.getUTCDate() - daysFromMonday + 6,
+      23,
+      59,
+      59,
+      999
+    )
+  )
+  return scheduledAt >= rangeStart && scheduledAt <= rangeEnd
+}
+
 /** Mimics ORDER BY scheduledAt ASC */
 function sortByScheduledAt(activities: ActivityForCalendar[]): ActivityForCalendar[] {
   return [...activities].sort((a, b) => a.scheduledAt.getTime() - b.scheduledAt.getTime())
@@ -101,6 +130,33 @@ describe('getActivitiesForDay — orderBy scheduledAt ASC', () => {
     const sorted = sortByScheduledAt([act])
     expect(sorted).toHaveLength(1)
     expect(sorted[0].id).toBe('solo')
+  })
+})
+
+// ─── Tests: getActivitiesForWeek — week-range filter (AC1 Story 5.3) ──────────
+
+// Target week: 2024-01-15 is a Monday — so the ISO week is Mon 2024-01-15 to Sun 2024-01-21
+const TARGET_WEEK_DATE = new Date('2024-01-15T00:00:00Z') // Monday
+
+describe('getActivitiesForWeek — UTC week-range filter', () => {
+  it('includes activity scheduled at Monday 00:00:00Z (week start)', () => {
+    const act = makeActivity({ scheduledAt: new Date('2024-01-15T00:00:00Z') })
+    expect(isInWeek(act.scheduledAt, TARGET_WEEK_DATE)).toBe(true)
+  })
+
+  it('includes activity scheduled at Sunday 23:59:59.999Z (week end)', () => {
+    const act = makeActivity({ scheduledAt: new Date('2024-01-21T23:59:59.999Z') })
+    expect(isInWeek(act.scheduledAt, TARGET_WEEK_DATE)).toBe(true)
+  })
+
+  it('excludes activity scheduled on Sunday before the week (previous week)', () => {
+    const act = makeActivity({ scheduledAt: new Date('2024-01-14T23:59:59.999Z') }) // Sunday before
+    expect(isInWeek(act.scheduledAt, TARGET_WEEK_DATE)).toBe(false)
+  })
+
+  it('excludes activity scheduled on Monday after the week (next week)', () => {
+    const act = makeActivity({ scheduledAt: new Date('2024-01-22T00:00:00Z') }) // Monday after
+    expect(isInWeek(act.scheduledAt, TARGET_WEEK_DATE)).toBe(false)
   })
 })
 

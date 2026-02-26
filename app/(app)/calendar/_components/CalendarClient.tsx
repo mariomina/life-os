@@ -57,7 +57,8 @@ const EVENT_COLOR_CLASSES: Record<string, string> = {
 
 // ─── Time Budget helpers ───────────────────────────────────────────────────────
 
-const AVAILABLE_MINUTES = 16 * 60 // 6:00–22:00 = 960 min
+const AVAILABLE_MINUTES = 16 * 60 // 6:00–22:00 = 960 min (daily)
+const AVAILABLE_WEEKLY_MINUTES = 16 * 60 * 7 // 16h × 7 days = 6720 min (weekly)
 
 export function calcTimeBudget(events: ICalendarEvent[]) {
   const committed = events.reduce((acc, e) => {
@@ -67,6 +68,17 @@ export function calcTimeBudget(events: ICalendarEvent[]) {
     committed,
     available: AVAILABLE_MINUTES,
     free: AVAILABLE_MINUTES - committed,
+  }
+}
+
+export function calcWeeklyTimeBudget(events: ICalendarEvent[]) {
+  const committed = events.reduce((acc, e) => {
+    return acc + (e.end.getTime() - e.start.getTime()) / 60000
+  }, 0)
+  return {
+    committed,
+    available: AVAILABLE_WEEKLY_MINUTES,
+    free: AVAILABLE_WEEKLY_MINUTES - committed,
   }
 }
 
@@ -86,6 +98,36 @@ function TimeBudgetPanel({ events }: { events: ICalendarEvent[] }) {
   return (
     <div className="flex items-center gap-6 px-4 py-2 border-b border-border bg-muted/30 text-sm">
       <span className="font-medium text-foreground">Time Budget</span>
+      <div className="flex items-center gap-1 text-muted-foreground">
+        <span>Comprometido:</span>
+        <span className="font-semibold text-foreground">{formatMinutes(committed)}</span>
+      </div>
+      <div className="flex items-center gap-1 text-muted-foreground">
+        <span>Disponible:</span>
+        <span className="font-semibold text-foreground">{formatMinutes(available)}</span>
+      </div>
+      <div className="flex items-center gap-1 text-muted-foreground">
+        <span>Libre:</span>
+        <span
+          className={`font-semibold ${isOvercommitted ? 'text-red-500' : 'text-green-600 dark:text-green-400'}`}
+        >
+          {isOvercommitted ? '-' : ''}
+          {formatMinutes(free)}
+        </span>
+      </div>
+    </div>
+  )
+}
+
+// ─── Weekly Time Budget Panel (AC3 Story 5.3) ─────────────────────────────────
+
+function WeeklyTimeBudgetPanel({ events }: { events: ICalendarEvent[] }) {
+  const { committed, available, free } = calcWeeklyTimeBudget(events)
+  const isOvercommitted = free < 0
+
+  return (
+    <div className="flex items-center gap-6 px-4 py-2 border-b border-border bg-muted/30 text-sm">
+      <span className="font-medium text-foreground">Time Budget Semanal</span>
       <div className="flex items-center gap-1 text-muted-foreground">
         <span>Comprometido:</span>
         <span className="font-semibold text-foreground">{formatMinutes(committed)}</span>
@@ -505,8 +547,11 @@ export function CalendarClient({ events = [], defaultView = 'week' }: CalendarCl
         </div>
       </div>
 
-      {/* Time Budget panel — only in Day view (AC4) */}
+      {/* Time Budget panel — only in Day view (AC4 Story 5.2) */}
       {view === 'day' && <TimeBudgetPanel events={currentDayEvents} />}
+
+      {/* Weekly Time Budget panel — only in Week view (AC3 Story 5.3) */}
+      {view === 'week' && <WeeklyTimeBudgetPanel events={events} />}
 
       {/* Calendar body */}
       <div className="flex-1 overflow-auto">
