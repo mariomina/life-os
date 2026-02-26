@@ -7,6 +7,7 @@
 // adapted to Tailwind v4 and date-fns v4.
 //
 // Story 5.2: fix timezone (getUTCHours→getHours), Time Budget panel, action buttons.
+// Story 5.8: time tracking — start/stop/pause/resume, time totals in DayView.
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
@@ -40,10 +41,30 @@ import type { AreaOption } from '@/actions/calendar'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+interface TimerState {
+  entryId: string
+  isPaused: boolean
+}
+
 interface CalendarClientProps {
   events?: ICalendarEvent[]
   defaultView?: TCalendarView
   areas?: AreaOption[]
+  /** Record<activityId, totalSeconds> — accumulated time from completed sessions */
+  timeTotals?: Record<string, number>
+  /** Record<activityId, entryId> — currently active timer entry per activity */
+  initialActiveTimers?: Record<string, string>
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/** Formats total seconds into human-readable string. Returns '' if 0. */
+export function formatSeconds(totalSeconds: number): string {
+  if (totalSeconds <= 0) return ''
+  const h = Math.floor(totalSeconds / 3600)
+  const m = Math.floor((totalSeconds % 3600) / 60)
+  if (h > 0) return m > 0 ? `${h}h ${m}min` : `${h}h`
+  return `${m} min`
 }
 
 // ─── Color mapping ────────────────────────────────────────────────────────────
@@ -159,7 +180,7 @@ function WeeklyTimeBudgetPanel({ events }: { events: ICalendarEvent[] }) {
   )
 }
 
-// ─── Event Action Buttons (AC5) ────────────────────────────────────────────────
+// ─── Event Action Buttons (Story 5.2 / 5.8) ───────────────────────────────────
 
 function showToast(message: string) {
   const el = document.createElement('div')
@@ -174,24 +195,70 @@ function EventActionButtons({
   evt,
   onCheckin,
   onDelete,
+  timerState,
+  onStartTimer,
+  onStopTimer,
+  onPauseTimer,
+  onResumeTimer,
 }: {
   evt: ICalendarEvent
   onCheckin: (id: string) => void
   onDelete?: (id: string) => void
+  timerState?: TimerState
+  onStartTimer: (activityId: string) => void
+  onStopTimer: (activityId: string, entryId: string) => void
+  onPauseTimer: (activityId: string, entryId: string) => void
+  onResumeTimer: (activityId: string, entryId: string) => void
 }) {
   const isDone = (evt as { status?: string }).status === 'done'
   const isPlanned = (evt as { planned?: boolean }).planned !== false
+  const isRunning = timerState !== undefined && !timerState.isPaused
+  const isPaused = timerState !== undefined && timerState.isPaused
 
   return (
     <div className="flex items-center gap-1 mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
       {!isDone && (
-        <button
-          aria-label={`Iniciar ${evt.title}`}
-          onClick={() => showToast('Timer — próximamente en Story 5.8')}
-          className="text-[10px] px-1.5 py-0.5 rounded bg-primary text-primary-foreground font-medium hover:bg-primary/90 transition-colors"
-        >
-          Iniciar
-        </button>
+        <>
+          {/* No timer active → show Iniciar */}
+          {!timerState && (
+            <button
+              aria-label={`Iniciar ${evt.title}`}
+              onClick={() => onStartTimer(evt.id)}
+              className="text-[10px] px-1.5 py-0.5 rounded bg-primary text-primary-foreground font-medium hover:bg-primary/90 transition-colors"
+            >
+              Iniciar
+            </button>
+          )}
+          {/* Timer running → show Detener + Pausar */}
+          {isRunning && (
+            <>
+              <button
+                aria-label={`Detener ${evt.title}`}
+                onClick={() => onStopTimer(evt.id, timerState.entryId)}
+                className="text-[10px] px-1.5 py-0.5 rounded bg-red-500 text-white font-medium hover:bg-red-600 transition-colors"
+              >
+                Detener
+              </button>
+              <button
+                aria-label={`Pausar ${evt.title}`}
+                onClick={() => onPauseTimer(evt.id, timerState.entryId)}
+                className="text-[10px] px-1.5 py-0.5 rounded border border-amber-500 text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/30 transition-colors"
+              >
+                Pausar
+              </button>
+            </>
+          )}
+          {/* Timer paused → show Reanudar */}
+          {isPaused && (
+            <button
+              aria-label={`Reanudar ${evt.title}`}
+              onClick={() => onResumeTimer(evt.id, timerState.entryId)}
+              className="text-[10px] px-1.5 py-0.5 rounded bg-primary text-primary-foreground font-medium hover:bg-primary/90 transition-colors"
+            >
+              Reanudar
+            </button>
+          )}
+        </>
       )}
       <button
         aria-label={`Check-in ${evt.title}`}
@@ -350,10 +417,22 @@ function DayView({
   currentDate,
   events,
   onDelete,
+  timeTotals,
+  activeTimers,
+  onStartTimer,
+  onStopTimer,
+  onPauseTimer,
+  onResumeTimer,
 }: {
   currentDate: Date
   events: ICalendarEvent[]
   onDelete: (id: string) => void
+  timeTotals: Record<string, number>
+  activeTimers: Map<string, TimerState>
+  onStartTimer: (activityId: string) => void
+  onStopTimer: (activityId: string, entryId: string) => void
+  onPauseTimer: (activityId: string, entryId: string) => void
+  onResumeTimer: (activityId: string, entryId: string) => void
 }) {
   const router = useRouter()
   const hours = getDayHourSlots(currentDate, 7, 22)
@@ -374,15 +453,35 @@ function DayView({
               {format(hour, 'HH:mm')}
             </div>
             <div className="flex-1 border-l border-border/50 p-1 space-y-0.5">
-              {slotEvents.map((evt) => (
-                <div
-                  key={evt.id}
-                  className={`group text-sm rounded border-l-2 px-2 py-1 ${EVENT_COLOR_CLASSES[evt.color ?? 'blue']}`}
-                >
-                  <span className="font-medium">{evt.title}</span>
-                  <EventActionButtons evt={evt} onCheckin={handleCheckin} onDelete={onDelete} />
-                </div>
-              ))}
+              {slotEvents.map((evt) => {
+                const totalSeconds = timeTotals[evt.id] ?? 0
+                const formattedTime = formatSeconds(totalSeconds)
+                return (
+                  <div
+                    key={evt.id}
+                    className={`group text-sm rounded border-l-2 px-2 py-1 ${EVENT_COLOR_CLASSES[evt.color ?? 'blue']}`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium">{evt.title}</span>
+                      {formattedTime && (
+                        <span className="text-[10px] text-muted-foreground font-mono">
+                          ⏱ {formattedTime}
+                        </span>
+                      )}
+                    </div>
+                    <EventActionButtons
+                      evt={evt}
+                      onCheckin={handleCheckin}
+                      onDelete={onDelete}
+                      timerState={activeTimers.get(evt.id)}
+                      onStartTimer={onStartTimer}
+                      onStopTimer={onStopTimer}
+                      onPauseTimer={onPauseTimer}
+                      onResumeTimer={onResumeTimer}
+                    />
+                  </div>
+                )
+              })}
             </div>
           </div>
         )
@@ -516,10 +615,23 @@ export function CalendarClient({
   events = [],
   defaultView = 'week',
   areas = [],
+  timeTotals = {},
+  initialActiveTimers = {},
 }: CalendarClientProps) {
   const [view, setView] = useState<TCalendarView>(defaultView)
   const [currentDate, setCurrentDate] = useState(new Date())
   const [isModalOpen, setIsModalOpen] = useState(false)
+
+  // Timer state: Map<activityId, TimerState> — initialized from server-side active timers
+  const [activeTimers, setActiveTimers] = useState<Map<string, TimerState>>(
+    () =>
+      new Map(
+        Object.entries(initialActiveTimers).map(([activityId, entryId]) => [
+          activityId,
+          { entryId, isPaused: false },
+        ])
+      )
+  )
 
   // Events for the currently displayed day — used by Time Budget panel (AC4)
   const currentDayEvents = getEventsForDay(events, currentDate)
@@ -553,6 +665,66 @@ export function CalendarClient({
     import('@/actions/calendar').then(({ deleteActivity }) => {
       deleteActivity(activityId).then((result) => {
         if (result.error) showToast(`Error: ${result.error}`)
+      })
+    })
+  }
+
+  // ─── Timer handlers (Story 5.8) ─────────────────────────────────────────────
+
+  function handleStartTimer(activityId: string) {
+    import('@/actions/timer').then(({ startTimer }) => {
+      startTimer(activityId).then((result) => {
+        if (result.error) {
+          showToast(`Error: ${result.error}`)
+        } else if (result.entryId) {
+          setActiveTimers((prev) =>
+            new Map(prev).set(activityId, { entryId: result.entryId!, isPaused: false })
+          )
+        }
+      })
+    })
+  }
+
+  function handleStopTimer(activityId: string, entryId: string) {
+    import('@/actions/timer').then(({ stopTimer }) => {
+      stopTimer(entryId).then((result) => {
+        if (result.error) {
+          showToast(`Error: ${result.error}`)
+        } else {
+          setActiveTimers((prev) => {
+            const m = new Map(prev)
+            m.delete(activityId)
+            return m
+          })
+        }
+      })
+    })
+  }
+
+  function handlePauseTimer(activityId: string, entryId: string) {
+    const reason = window.prompt('¿Por qué pausas el timer? (requerido)')
+    if (!reason || !reason.trim()) return // User cancelled or empty
+    import('@/actions/timer').then(({ pauseTimer }) => {
+      pauseTimer(entryId, reason).then((result) => {
+        if (result.error) {
+          showToast(`Error: ${result.error}`)
+        } else {
+          setActiveTimers((prev) => new Map(prev).set(activityId, { entryId, isPaused: true }))
+        }
+      })
+    })
+  }
+
+  function handleResumeTimer(activityId: string, _pausedEntryId: string) {
+    import('@/actions/timer').then(({ resumeTimer }) => {
+      resumeTimer(_pausedEntryId).then((result) => {
+        if (result.error) {
+          showToast(`Error: ${result.error}`)
+        } else if (result.entryId) {
+          setActiveTimers((prev) =>
+            new Map(prev).set(activityId, { entryId: result.entryId!, isPaused: false })
+          )
+        }
       })
     })
   }
@@ -629,7 +801,17 @@ export function CalendarClient({
         {view === 'week' && <WeekView currentDate={currentDate} events={events} />}
         {view === 'month' && <MonthView currentDate={currentDate} events={events} />}
         {view === 'day' && (
-          <DayView currentDate={currentDate} events={events} onDelete={handleDelete} />
+          <DayView
+            currentDate={currentDate}
+            events={events}
+            onDelete={handleDelete}
+            timeTotals={timeTotals}
+            activeTimers={activeTimers}
+            onStartTimer={handleStartTimer}
+            onStopTimer={handleStopTimer}
+            onPauseTimer={handlePauseTimer}
+            onResumeTimer={handleResumeTimer}
+          />
         )}
         {view === 'year' && <YearView currentDate={currentDate} events={events} />}
         {view === 'agenda' && <AgendaView currentDate={currentDate} events={events} />}

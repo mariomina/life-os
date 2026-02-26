@@ -2,12 +2,14 @@
 // Server Component — auth check + calendar data fetch.
 // Delegates rendering to CalendarClient (Client Component).
 // Story 5.7: passes areas list for NewActivityModal.
+// Story 5.8: passes timeTotals + activeTimers for time tracking UI.
 
 import { redirect } from 'next/navigation'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { CalendarClient } from './_components/CalendarClient'
 import { getActivitiesForYear } from '@/lib/db/queries/calendar'
 import { getAreasForUser } from '@/actions/calendar'
+import { getTimeTotalsForActivities, getActiveTimersForActivities } from '@/actions/timer'
 import type { ICalendarEvent } from '@/lib/calendar/calendar-utils'
 
 export default async function CalendarPage() {
@@ -48,6 +50,16 @@ export default async function CalendarPage() {
 
   const areasData = areas.status === 'fulfilled' ? areas.value : []
 
+  // Fetch time tracking data for all activities in parallel
+  const activityIds = events.map((e) => e.id)
+  const [timeTotalsResult, activeTimersResult] = await Promise.allSettled([
+    getTimeTotalsForActivities(user.id, activityIds),
+    getActiveTimersForActivities(user.id, activityIds),
+  ])
+
+  const timeTotals = timeTotalsResult.status === 'fulfilled' ? timeTotalsResult.value : {}
+  const activeTimers = activeTimersResult.status === 'fulfilled' ? activeTimersResult.value : {}
+
   return (
     <div className="flex flex-col gap-4 h-[calc(100vh-8rem)]">
       {/* Header */}
@@ -59,7 +71,13 @@ export default async function CalendarPage() {
       </section>
 
       {/* Calendar */}
-      <CalendarClient events={events} defaultView="week" areas={areasData} />
+      <CalendarClient
+        events={events}
+        defaultView="week"
+        areas={areasData}
+        timeTotals={timeTotals}
+        initialActiveTimers={activeTimers}
+      />
     </div>
   )
 }
