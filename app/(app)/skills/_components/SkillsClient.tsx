@@ -10,10 +10,8 @@ import { createSkill, updateSkill, archiveSkill, confirmEmergingSkill } from '@/
 import type { Skill } from '@/lib/db/schema/skills'
 import type { Area } from '@/lib/db/schema/areas'
 import type { EmergingSkillSuggestion } from '@/features/skills/detection'
-
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-type SkillLevel = 'beginner' | 'intermediate' | 'advanced' | 'expert'
+import { getSkillProgress, computeSkillLevel } from '@/features/skills/level'
+import type { SkillLevel } from '@/features/skills/level'
 
 const DISMISS_KEY = 'life_os_dismissed_skill_suggestions'
 
@@ -74,6 +72,35 @@ export function SkillsClient({ initialSkills, areas, initialSuggestions = [] }: 
     () => initialSuggestions.filter((s) => !dismissedTerms.includes(s.term.toLowerCase())),
     [initialSuggestions, dismissedTerms]
   )
+
+  // ── Filter and sort state (Story 7.4 — AC5) ──────────────────────────────
+
+  const [filterLevel, setFilterLevel] = useState<SkillLevel | 'all'>('all')
+  const [sortBy, setSortBy] = useState<'name' | 'level' | 'time'>('time')
+
+  const levelOrder: Record<SkillLevel, number> = {
+    beginner: 0,
+    intermediate: 1,
+    advanced: 2,
+    expert: 3,
+  }
+
+  const filteredAndSortedSkills = useMemo(() => {
+    return [...skills]
+      .filter(
+        (s) => filterLevel === 'all' || computeSkillLevel(s.timeInvestedSeconds) === filterLevel
+      )
+      .sort((a, b) => {
+        if (sortBy === 'name') return a.name.localeCompare(b.name)
+        if (sortBy === 'level')
+          return (
+            levelOrder[computeSkillLevel(b.timeInvestedSeconds)] -
+            levelOrder[computeSkillLevel(a.timeInvestedSeconds)]
+          )
+        return b.timeInvestedSeconds - a.timeInvestedSeconds
+      })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [skills, filterLevel, sortBy])
 
   // ── Create form state ─────────────────────────────────────────────────────
 
@@ -361,126 +388,175 @@ export function SkillsClient({ initialSkills, areas, initialSuggestions = [] }: 
           </p>
         </div>
       ) : (
-        <ul className="space-y-2">
-          {skills.map((skill) => {
-            const level = skill.level as SkillLevel
-            const areaName = areas.find((a) => a.id === skill.areaId)?.name
+        <>
+          {/* Filters and sorting (Story 7.4 — AC5) */}
+          {skills.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex items-center gap-1">
+                <span className="text-xs text-muted-foreground">Nivel:</span>
+                {(['all', 'beginner', 'intermediate', 'advanced', 'expert'] as const).map((lvl) => (
+                  <button
+                    key={lvl}
+                    onClick={() => setFilterLevel(lvl)}
+                    className={`rounded-full border px-2 py-0.5 text-xs font-medium transition-colors ${
+                      filterLevel === lvl
+                        ? 'border-primary bg-primary text-primary-foreground'
+                        : 'border-border text-muted-foreground hover:bg-muted'
+                    }`}
+                  >
+                    {lvl === 'all' ? 'Todos' : LEVEL_LABELS[lvl]}
+                  </button>
+                ))}
+              </div>
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
+                className="ml-auto rounded-md border border-input bg-background px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+              >
+                <option value="time">Ordenar: Tiempo ↓</option>
+                <option value="name">Ordenar: Nombre A-Z</option>
+                <option value="level">Ordenar: Nivel ↓</option>
+              </select>
+            </div>
+          )}
 
-            if (editingId === skill.id) {
+          <ul className="space-y-2">
+            {filteredAndSortedSkills.map((skill) => {
+              const areaName = areas.find((a) => a.id === skill.areaId)?.name
+
+              if (editingId === skill.id) {
+                return (
+                  <li
+                    key={skill.id}
+                    className="rounded-lg border border-primary/30 bg-card p-4 shadow-sm space-y-3"
+                  >
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="mb-1 block text-xs text-muted-foreground">Nombre</label>
+                        <input
+                          type="text"
+                          value={editName}
+                          onChange={(e) => setEditName(e.target.value)}
+                          disabled={isPending}
+                          className="w-full rounded-md border border-input bg-background px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-xs text-muted-foreground">Nivel</label>
+                        <select
+                          value={editLevel}
+                          onChange={(e) => setEditLevel(e.target.value as SkillLevel)}
+                          disabled={isPending}
+                          className="w-full rounded-md border border-input bg-background px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50"
+                        >
+                          {(Object.keys(LEVEL_LABELS) as SkillLevel[]).map((l) => (
+                            <option key={l} value={l}>
+                              {LEVEL_LABELS[l]}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                    {errorMsg && <p className="text-xs text-destructive">{errorMsg}</p>}
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => handleUpdate(skill.id)}
+                        disabled={isPending}
+                        className="rounded-md bg-primary px-3 py-1 text-xs font-medium text-primary-foreground disabled:opacity-50"
+                      >
+                        {isPending ? 'Guardando...' : 'Guardar'}
+                      </button>
+                      <button
+                        onClick={() => setEditingId(null)}
+                        disabled={isPending}
+                        className="rounded-md border border-border px-3 py-1 text-xs text-muted-foreground hover:bg-muted disabled:opacity-50"
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                  </li>
+                )
+              }
+
+              // SkillProgressCard (Story 7.4 — AC4)
+              const progress = getSkillProgress(skill.timeInvestedSeconds)
+              const level = progress.currentLevel
+
               return (
                 <li
                   key={skill.id}
-                  className="rounded-lg border border-primary/30 bg-card p-4 shadow-sm space-y-3"
+                  className="rounded-lg border border-border bg-card p-4 shadow-sm space-y-2"
                 >
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="mb-1 block text-xs text-muted-foreground">Nombre</label>
-                      <input
-                        type="text"
-                        value={editName}
-                        onChange={(e) => setEditName(e.target.value)}
-                        disabled={isPending}
-                        className="w-full rounded-md border border-input bg-background px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50"
-                      />
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-medium text-sm text-foreground">{skill.name}</span>
+                        <span
+                          className={`rounded-full px-2 py-0.5 text-xs font-medium ${LEVEL_BADGE_COLORS[level]}`}
+                        >
+                          {LEVEL_LABELS[level]}
+                        </span>
+                        {skill.autoDetected && (
+                          <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">
+                            Auto
+                          </span>
+                        )}
+                        {areaName && (
+                          <span className="text-xs text-muted-foreground">· {areaName}</span>
+                        )}
+                      </div>
                     </div>
-                    <div>
-                      <label className="mb-1 block text-xs text-muted-foreground">Nivel</label>
-                      <select
-                        value={editLevel}
-                        onChange={(e) => setEditLevel(e.target.value as SkillLevel)}
+                    <div className="flex shrink-0 gap-1">
+                      <button
+                        onClick={() => startEdit(skill)}
                         disabled={isPending}
-                        className="w-full rounded-md border border-input bg-background px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50"
+                        title="Editar"
+                        className="rounded p-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
                       >
-                        {(Object.keys(LEVEL_LABELS) as SkillLevel[]).map((l) => (
-                          <option key={l} value={l}>
-                            {LEVEL_LABELS[l]}
-                          </option>
-                        ))}
-                      </select>
+                        ✏️
+                      </button>
+                      <button
+                        onClick={() => handleArchive(skill.id)}
+                        disabled={isPending}
+                        title="Archivar"
+                        className="rounded p-1 text-xs text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
+                      >
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          width="14"
+                          height="14"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z" />
+                          <path d="m3.3 7 8.7 5 8.7-5" />
+                          <path d="M12 22V12" />
+                        </svg>
+                      </button>
                     </div>
                   </div>
-                  {errorMsg && <p className="text-xs text-destructive">{errorMsg}</p>}
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => handleUpdate(skill.id)}
-                      disabled={isPending}
-                      className="rounded-md bg-primary px-3 py-1 text-xs font-medium text-primary-foreground disabled:opacity-50"
-                    >
-                      {isPending ? 'Guardando...' : 'Guardar'}
-                    </button>
-                    <button
-                      onClick={() => setEditingId(null)}
-                      disabled={isPending}
-                      className="rounded-md border border-border px-3 py-1 text-xs text-muted-foreground hover:bg-muted disabled:opacity-50"
-                    >
-                      Cancelar
-                    </button>
+                  {/* Progress bar (AC4) */}
+                  <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                    <div
+                      className="h-full rounded-full bg-primary transition-all"
+                      style={{ width: `${progress.progressPercent}%` }}
+                    />
                   </div>
+                  <p className="text-xs text-muted-foreground">
+                    {formatSkillTime(skill.timeInvestedSeconds)}
+                    {progress.hoursToNextLevel != null
+                      ? ` · faltan ${progress.hoursToNextLevel}h para ${LEVEL_LABELS[progress.nextLevel!]}`
+                      : ' · Nivel máximo'}
+                  </p>
                 </li>
               )
-            }
-
-            return (
-              <li
-                key={skill.id}
-                className="flex items-center justify-between gap-3 rounded-lg border border-border bg-card p-3 shadow-sm"
-              >
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium text-sm text-foreground">{skill.name}</span>
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-xs font-medium ${LEVEL_BADGE_COLORS[level]}`}
-                    >
-                      {LEVEL_LABELS[level]}
-                    </span>
-                    {skill.autoDetected && (
-                      <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">
-                        Auto
-                      </span>
-                    )}
-                  </div>
-                  <div className="mt-0.5 flex items-center gap-3 text-xs text-muted-foreground">
-                    <span>{formatSkillTime(skill.timeInvestedSeconds)}</span>
-                    {areaName && <span>· {areaName}</span>}
-                  </div>
-                </div>
-
-                <div className="flex shrink-0 gap-1">
-                  <button
-                    onClick={() => startEdit(skill)}
-                    disabled={isPending}
-                    title="Editar"
-                    className="rounded p-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
-                  >
-                    ✏️
-                  </button>
-                  <button
-                    onClick={() => handleArchive(skill.id)}
-                    disabled={isPending}
-                    title="Archivar"
-                    className="rounded p-1 text-xs text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
-                  >
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      width="14"
-                      height="14"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z" />
-                      <path d="m3.3 7 8.7 5 8.7-5" />
-                      <path d="M12 22V12" />
-                    </svg>
-                  </button>
-                </div>
-              </li>
-            )
-          })}
-        </ul>
+            })}
+          </ul>
+        </>
       )}
     </div>
   )

@@ -12,6 +12,7 @@ import { db, assertDatabaseUrl } from '@/lib/db/client'
 import { timeEntries } from '@/lib/db/schema/time-entries'
 import { stepSkillTags } from '@/lib/db/schema/step-skill-tags'
 import { skills } from '@/lib/db/schema/skills'
+import { computeSkillLevel } from '@/features/skills/level'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -106,21 +107,34 @@ export async function stopTimer(entryId: string): Promise<TimerActionResult> {
       .where(eq(stepSkillTags.stepActivityId, entry.stepActivityId))
 
     if (tags.length > 0) {
+      const skillIds = tags.map((t) => t.skillId)
       await db
         .update(skills)
         .set({
           timeInvestedSeconds: sql`${skills.timeInvestedSeconds} + ${durationSeconds}`,
           updatedAt: new Date(),
         })
-        .where(
-          and(
-            inArray(
-              skills.id,
-              tags.map((t) => t.skillId)
-            ),
-            eq(skills.userId, userId)
-          )
-        )
+        .where(and(inArray(skills.id, skillIds), eq(skills.userId, userId)))
+
+      // Story 7.4 — AC7: Recalculate skill level for each updated skill
+      const updatedSkills = await db
+        .select({
+          id: skills.id,
+          level: skills.level,
+          timeInvestedSeconds: skills.timeInvestedSeconds,
+        })
+        .from(skills)
+        .where(inArray(skills.id, skillIds))
+
+      for (const s of updatedSkills) {
+        const newLevel = computeSkillLevel(s.timeInvestedSeconds)
+        if (newLevel !== s.level) {
+          await db
+            .update(skills)
+            .set({ level: newLevel, updatedAt: new Date() })
+            .where(eq(skills.id, s.id))
+        }
+      }
     }
 
     revalidatePath('/calendar')

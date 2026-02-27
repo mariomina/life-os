@@ -16,6 +16,7 @@ import { stepsActivities } from '@/lib/db/schema/steps-activities'
 import { timeEntries } from '@/lib/db/schema/time-entries'
 import { detectEmergingSkills } from '@/features/skills/detection'
 import type { EmergingSkillSuggestion } from '@/features/skills/detection'
+import { computeSkillLevel } from '@/features/skills/level'
 import { eq, and, gte, isNull, sql } from 'drizzle-orm'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -331,4 +332,46 @@ export async function dismissEmergingSkill(term: string): Promise<SkillActionRes
   if (!term?.trim()) return { success: false, error: 'Término inválido' }
   // MVP: persistence via localStorage in SkillsClient
   return { success: true }
+}
+
+/**
+ * Recalculates skill level from timeInvestedSeconds and updates DB if changed.
+ * Acts as a safety net to keep level in sync with accumulated time.
+ * Story 7.4 — AC3.
+ */
+export async function recalculateSkillLevel(
+  skillId: string
+): Promise<{ success: boolean; levelChanged?: boolean; newLevel?: string; error?: string }> {
+  if (!skillId?.trim()) return { success: false, error: 'ID de habilidad inválido' }
+
+  try {
+    assertDatabaseUrl()
+    const userId = await getAuthenticatedUserId()
+
+    const [skill] = await db
+      .select({
+        id: skills.id,
+        level: skills.level,
+        timeInvestedSeconds: skills.timeInvestedSeconds,
+      })
+      .from(skills)
+      .where(and(eq(skills.id, skillId), eq(skills.userId, userId)))
+      .limit(1)
+
+    if (!skill) return { success: false, error: 'Skill no encontrada' }
+
+    const newLevel = computeSkillLevel(skill.timeInvestedSeconds)
+    if (newLevel === skill.level) return { success: true, levelChanged: false }
+
+    await db
+      .update(skills)
+      .set({ level: newLevel, updatedAt: new Date() })
+      .where(eq(skills.id, skillId))
+
+    revalidatePath('/skills')
+    return { success: true, levelChanged: true, newLevel }
+  } catch (err) {
+    console.error('[recalculateSkillLevel] failed:', err)
+    return { success: false, error: 'Error al recalcular nivel' }
+  }
 }
