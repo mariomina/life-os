@@ -6,17 +6,22 @@
 // Story 6.1 — Captura Rápida Inbox.
 // Story 6.3 — Propuesta IA (tarjeta de propuesta + botones Procesar/Confirmar).
 // Story 6.4 — Detección de proyecto emergente (ProjectProposalCard).
+// Story 6.5 — Procesamiento manual (ManualProcessingCard) + alerta acumulación >7d.
 
-import { useState, useTransition, useRef } from 'react'
+import { useState, useTransition, useRef, useMemo } from 'react'
 import {
   createInboxItem,
   discardInboxItem,
   processInboxItem,
   confirmInboxProposal,
   createProjectFromInbox,
+  updateInboxItemManually,
 } from '@/actions/inbox'
+import type { ManualUpdateData } from '@/actions/inbox'
+import { getInboxAccumulationAlert } from '@/features/inbox/alerts'
 import type { InboxItem } from '@/lib/db/schema/inbox-items'
 import type { WorkflowTemplate } from '@/lib/db/queries/workflow-templates'
+import type { Area } from '@/lib/db/schema/areas'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -25,6 +30,7 @@ type StatusFilter = 'all' | 'pending' | 'processed' | 'discarded'
 interface InboxClientProps {
   initialItems: InboxItem[]
   templates: WorkflowTemplate[]
+  areas: Area[]
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -218,9 +224,168 @@ function ProjectProposalCard({
   )
 }
 
+// ─── ManualProcessingCard sub-component ──────────────────────────────────────
+
+const CLASSIFICATION_OPTIONS = [
+  { value: 'task', label: 'Tarea' },
+  { value: 'event', label: 'Evento' },
+  { value: 'project', label: 'Proyecto' },
+  { value: 'idea', label: 'Idea' },
+  { value: 'reference', label: 'Referencia' },
+  { value: 'habit', label: 'Hábito' },
+] as const
+
+interface ManualProcessingCardProps {
+  item: InboxItem
+  areas: Area[]
+  onSave: (itemId: string, data: ManualUpdateData) => void
+  isLoading: boolean
+  savedId: string | null
+}
+
+function ManualProcessingCard({
+  item,
+  areas,
+  onSave,
+  isLoading,
+  savedId,
+}: ManualProcessingCardProps) {
+  const [classification, setClassification] = useState<ManualUpdateData['classification']>('task')
+  const [areaId, setAreaId] = useState<string>('')
+  const [title, setTitle] = useState<string>(item.rawText)
+  const [slot, setSlot] = useState<string>('')
+  const [durationMinutes, setDurationMinutes] = useState<string>('30')
+
+  const isSaved = savedId === item.id
+
+  if (isSaved) {
+    return (
+      <div className="mt-2 rounded-lg border border-green-200 bg-green-50 p-3">
+        <p className="text-sm font-medium text-green-700">✓ Clasificación guardada</p>
+      </div>
+    )
+  }
+
+  function handleSave() {
+    if (!areaId) return
+    onSave(item.id, {
+      classification,
+      areaId,
+      title: title.trim() || undefined,
+      slot: slot || null,
+      durationMinutes: durationMinutes ? parseInt(durationMinutes, 10) : null,
+    })
+  }
+
+  return (
+    <div className="mt-2 rounded-lg border border-purple-200 bg-purple-50 p-3 space-y-3">
+      <p className="text-xs font-semibold text-purple-700 uppercase tracking-wide">
+        Procesamiento Manual
+      </p>
+
+      {item.aiError && (
+        <p className="text-xs text-muted-foreground">IA no disponible: {item.aiError}</p>
+      )}
+
+      {/* Título */}
+      <div>
+        <label className="mb-1 block text-xs text-muted-foreground">Título</label>
+        <input
+          type="text"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          disabled={isLoading}
+          className="w-full rounded-md border border-input bg-background px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50"
+        />
+      </div>
+
+      <div className="grid grid-cols-2 gap-2">
+        {/* Tipo */}
+        <div>
+          <label className="mb-1 block text-xs text-muted-foreground">Tipo *</label>
+          <select
+            value={classification}
+            onChange={(e) =>
+              setClassification(e.target.value as ManualUpdateData['classification'])
+            }
+            disabled={isLoading}
+            className="w-full rounded-md border border-input bg-background px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50"
+          >
+            {CLASSIFICATION_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Área */}
+        <div>
+          <label className="mb-1 block text-xs text-muted-foreground">Área *</label>
+          {areas.length === 0 ? (
+            <p className="text-xs text-muted-foreground">Configura tus áreas primero</p>
+          ) : (
+            <select
+              value={areaId}
+              onChange={(e) => setAreaId(e.target.value)}
+              disabled={isLoading}
+              className="w-full rounded-md border border-input bg-background px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50"
+            >
+              <option value="">Seleccionar...</option>
+              {areas.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2">
+        {/* Fecha/hora */}
+        <div>
+          <label className="mb-1 block text-xs text-muted-foreground">Fecha/hora (opcional)</label>
+          <input
+            type="datetime-local"
+            value={slot}
+            onChange={(e) => setSlot(e.target.value)}
+            disabled={isLoading}
+            className="w-full rounded-md border border-input bg-background px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50"
+          />
+        </div>
+
+        {/* Duración */}
+        <div>
+          <label className="mb-1 block text-xs text-muted-foreground">
+            Duración (min, opcional)
+          </label>
+          <input
+            type="number"
+            min="1"
+            value={durationMinutes}
+            onChange={(e) => setDurationMinutes(e.target.value)}
+            disabled={isLoading}
+            placeholder="30"
+            className="w-full rounded-md border border-input bg-background px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50"
+          />
+        </div>
+      </div>
+
+      <button
+        onClick={handleSave}
+        disabled={isLoading || !areaId}
+        className="rounded-md bg-purple-600 px-3 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+      >
+        {isLoading ? 'Guardando...' : '✓ Guardar'}
+      </button>
+    </div>
+  )
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export function InboxClient({ initialItems, templates }: InboxClientProps) {
+export function InboxClient({ initialItems, templates, areas }: InboxClientProps) {
   const [items, setItems] = useState<InboxItem[]>(initialItems)
   const [text, setText] = useState('')
   const [filter, setFilter] = useState<StatusFilter>('all')
@@ -228,7 +393,12 @@ export function InboxClient({ initialItems, templates }: InboxClientProps) {
   const [isPending, startTransition] = useTransition()
   const [confirmedId, setConfirmedId] = useState<string | null>(null)
   const [confirmedProjectId, setConfirmedProjectId] = useState<string | null>(null)
+  const [savedManualId, setSavedManualId] = useState<string | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  // ── Alert (AC1 + AC2) ─────────────────────────────────────────────────────
+
+  const alert = useMemo(() => getInboxAccumulationAlert(items), [items])
 
   // ── Submit ────────────────────────────────────────────────────────────────
 
@@ -321,6 +491,20 @@ export function InboxClient({ initialItems, templates }: InboxClientProps) {
     })
   }
 
+  // ── Save Manual ───────────────────────────────────────────────────────────
+
+  function handleSaveManual(itemId: string, data: ManualUpdateData) {
+    setErrorMsg(null)
+    startTransition(async () => {
+      const result = await updateInboxItemManually(itemId, data)
+      if (!result.success) {
+        setErrorMsg(result.error ?? 'Error al guardar clasificación manual')
+        return
+      }
+      setSavedManualId(itemId)
+    })
+  }
+
   // ── Filter ────────────────────────────────────────────────────────────────
 
   const filteredItems = items.filter((item) => {
@@ -366,6 +550,22 @@ export function InboxClient({ initialItems, templates }: InboxClientProps) {
         </div>
       </div>
 
+      {/* Accumulation alert banner (AC2) */}
+      {alert && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 flex items-center justify-between">
+          <p className="text-sm text-amber-700">
+            Tienes {alert.count} item{alert.count > 1 ? 's' : ''} sin procesar desde hace más de{' '}
+            {alert.oldestDays} días. Revísalos.
+          </p>
+          <button
+            onClick={() => setFilter('pending')}
+            className="ml-3 shrink-0 rounded-md bg-amber-100 px-3 py-1 text-xs font-medium text-amber-800 transition-colors hover:bg-amber-200"
+          >
+            Ver pendientes →
+          </button>
+        </div>
+      )}
+
       {/* Filter tabs */}
       <div className="flex gap-2">
         {(['all', 'pending', 'processed', 'discarded'] as StatusFilter[]).map((f) => (
@@ -408,7 +608,18 @@ export function InboxClient({ initialItems, templates }: InboxClientProps) {
                   </span>
                 </div>
 
-                {/* Project proposal card for processed items classified as 'project' */}
+                {/* Manual processing card for status='manual' (AC6) */}
+                {item.status === 'manual' && (
+                  <ManualProcessingCard
+                    item={item}
+                    areas={areas}
+                    onSave={handleSaveManual}
+                    isLoading={isPending}
+                    savedId={savedManualId}
+                  />
+                )}
+
+                {/* Project proposal card for processed items classified as 'project' (AC7) */}
                 {item.status === 'processed' &&
                   item.aiClassification === 'project' &&
                   !item.projectId && (
@@ -422,7 +633,7 @@ export function InboxClient({ initialItems, templates }: InboxClientProps) {
                     />
                   )}
 
-                {/* Activity proposal card for processed items NOT classified as project */}
+                {/* Activity proposal card for processed items NOT classified as project (AC7) */}
                 {item.status === 'processed' &&
                   item.aiClassification !== 'project' &&
                   !item.stepActivityId && (
@@ -443,13 +654,6 @@ export function InboxClient({ initialItems, templates }: InboxClientProps) {
                 {/* Already converted to project */}
                 {item.status === 'processed' && item.projectId && (
                   <p className="mt-1 text-xs text-violet-600">✓ Proyecto creado</p>
-                )}
-
-                {/* Manual fallback — show AI error if any */}
-                {item.status === 'manual' && item.aiError && (
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    IA no disponible: procesamiento manual
-                  </p>
                 )}
               </div>
 

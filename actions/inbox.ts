@@ -7,6 +7,7 @@
 // Story 6.2 — Pipeline IA: clasificación + área/OKR sugerido + detección huecos.
 // Story 6.3 — Confirmación 1-click: propuesta IA → activity creada en calendario.
 // Story 6.4 — Detección de proyecto emergente: propuesta IA → project creado.
+// Story 6.5 — Procesamiento manual (sin IA) + alerta inbox acumulado >7 días.
 
 import { revalidatePath } from 'next/cache'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
@@ -47,6 +48,19 @@ export interface CreateProjectFromInboxResult {
   success: boolean
   /** ID of the created Project when conversion succeeds */
   projectId?: string
+  error?: string
+}
+
+export interface ManualUpdateData {
+  classification: 'task' | 'event' | 'project' | 'habit' | 'idea' | 'reference'
+  areaId: string
+  title?: string
+  slot?: string | null // ISO 8601 o null
+  durationMinutes?: number | null
+}
+
+export interface ManualUpdateResult {
+  success: boolean
   error?: string
 }
 
@@ -392,5 +406,65 @@ export async function createProjectFromInbox(
   } catch (err) {
     console.error('[createProjectFromInbox] failed:', err)
     return { success: false, error: 'Error al crear el proyecto' }
+  }
+}
+
+/**
+ * Processes an inbox item manually (without AI) by setting classification,
+ * area, and optional scheduling data provided by the user.
+ * Story 6.5 — FR22: user is never blocked by AI unavailability.
+ *
+ * Guards:
+ * - Validates required fields: itemId, classification, areaId
+ * - Item must exist and belong to the authenticated user (ownership guard)
+ *
+ * On success:
+ * - Sets aiClassification, aiSuggestedAreaId, aiSuggestedTitle, aiSuggestedSlot,
+ *   aiSuggestedDurationMinutes, status='processed', processedAt=now()
+ * - Revalidates /inbox so ProposalCard (Story 6.3/6.4) can render
+ */
+export async function updateInboxItemManually(
+  itemId: string,
+  data: ManualUpdateData
+): Promise<ManualUpdateResult> {
+  if (!itemId?.trim()) return { success: false, error: 'ID de item inválido' }
+  if (!data.classification)
+    return { success: false, error: 'El tipo de clasificación es requerido' }
+  if (!data.areaId?.trim()) return { success: false, error: 'El área es requerida' }
+
+  try {
+    assertDatabaseUrl()
+    const userId = await getAuthenticatedUserId()
+
+    // Verify item exists and belongs to this user
+    const itemRows = await db
+      .select()
+      .from(inboxItems)
+      .where(and(eq(inboxItems.id, itemId), eq(inboxItems.userId, userId)))
+      .limit(1)
+
+    const item = itemRows[0]
+    if (!item) return { success: false, error: 'Item no encontrado' }
+
+    const now = new Date()
+    await db
+      .update(inboxItems)
+      .set({
+        aiClassification: data.classification,
+        aiSuggestedAreaId: data.areaId,
+        aiSuggestedTitle: data.title ?? item.rawText,
+        aiSuggestedSlot: data.slot ? new Date(data.slot) : null,
+        aiSuggestedDurationMinutes: data.durationMinutes ?? null,
+        status: 'processed',
+        processedAt: now,
+        updatedAt: now,
+      })
+      .where(eq(inboxItems.id, itemId))
+
+    revalidatePath('/inbox')
+    return { success: true }
+  } catch (err) {
+    console.error('[updateInboxItemManually] failed:', err)
+    return { success: false, error: 'Error al guardar la clasificación manual' }
   }
 }
