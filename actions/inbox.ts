@@ -5,11 +5,13 @@
 // Crear, descartar, listar y procesar inbox items del usuario autenticado.
 // Story 6.1 — Captura Rápida Inbox.
 // Story 6.2 — Pipeline IA: clasificación + área/OKR sugerido + detección huecos.
+// Story 6.3 — Confirmación 1-click: propuesta IA → activity creada en calendario.
 
 import { revalidatePath } from 'next/cache'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { db, assertDatabaseUrl } from '@/lib/db/client'
 import { inboxItems } from '@/lib/db/schema/inbox-items'
+import { stepsActivities } from '@/lib/db/schema/steps-activities'
 import { getInboxItemsByUser } from '@/lib/db/queries/inbox'
 import { getFreeSlots } from '@/lib/db/queries/calendar'
 import { getActiveOKRsForUser } from '@/lib/db/queries/okrs'
@@ -29,6 +31,13 @@ export interface ProcessInboxResult {
   success: boolean
   /** true when AI was unavailable and item fell back to manual mode (FR22) */
   manual?: boolean
+  error?: string
+}
+
+export interface ConfirmInboxResult {
+  success: boolean
+  /** ID of the created StepActivity when confirmation succeeds */
+  stepActivityId?: string
   error?: string
 }
 
@@ -216,5 +225,84 @@ export async function processInboxItem(itemId: string): Promise<ProcessInboxResu
   } catch (err) {
     console.error('[processInboxItem] failed:', err)
     return { success: false, error: 'Error al procesar el item' }
+  }
+}
+
+/**
+ * Confirms an AI proposal for an inbox item by creating a StepActivity in the calendar.
+ * Story 6.3 — Confirmación 1-click.
+ *
+ * Guards:
+ * - Item must exist and belong to the authenticated user
+ * - Item status must be 'processed' (has a valid AI proposal)
+ * - Item must not already have a stepActivityId (prevents duplicate confirmation)
+ * - Item must have aiSuggestedAreaId (required FK for steps_activities)
+ *
+ * On success:
+ * - Inserts a new StepActivity with the AI-proposed fields
+ * - Updates inbox_items.stepActivityId with the new activity ID
+ * - Revalidates /inbox and /calendar
+ */
+export async function confirmInboxProposal(itemId: string): Promise<ConfirmInboxResult> {
+  if (!itemId?.trim()) return { success: false, error: 'ID de item inválido' }
+
+  try {
+    assertDatabaseUrl()
+    const userId = await getAuthenticatedUserId()
+
+    // Fetch item with ownership check
+    const itemRows = await db
+      .select()
+      .from(inboxItems)
+      .where(and(eq(inboxItems.id, itemId), eq(inboxItems.userId, userId)))
+      .limit(1)
+
+    const item = itemRows[0]
+    if (!item) return { success: false, error: 'Item no encontrado' }
+
+    // Guard: must have AI proposal ready
+    if (item.status !== 'processed') {
+      return { success: false, error: 'El item no tiene propuesta IA lista' }
+    }
+
+    // Guard: prevent double confirmation
+    if (item.stepActivityId) {
+      return { success: false, error: 'Este item ya fue confirmado' }
+    }
+
+    // Guard: area is required for StepActivity insert
+    if (!item.aiSuggestedAreaId) {
+      return { success: false, error: 'El item no tiene área sugerida' }
+    }
+
+    // Insert the new StepActivity
+    const [newActivity] = await db
+      .insert(stepsActivities)
+      .values({
+        userId,
+        areaId: item.aiSuggestedAreaId,
+        title: item.aiSuggestedTitle ?? item.rawText,
+        scheduledAt: item.aiSuggestedSlot ?? undefined,
+        scheduledDurationMinutes: item.aiSuggestedDurationMinutes ?? undefined,
+        okrId: item.aiSuggestedOkrId ?? undefined,
+        executorType: 'human',
+        planned: true,
+        status: 'pending',
+      })
+      .returning({ id: stepsActivities.id })
+
+    // Link inbox item to the created activity
+    await db
+      .update(inboxItems)
+      .set({ stepActivityId: newActivity.id, updatedAt: new Date() })
+      .where(eq(inboxItems.id, itemId))
+
+    revalidatePath('/inbox')
+    revalidatePath('/calendar')
+
+    return { success: true, stepActivityId: newActivity.id }
+  } catch (err) {
+    console.error('[confirmInboxProposal] failed:', err)
+    return { success: false, error: 'Error al confirmar la propuesta' }
   }
 }

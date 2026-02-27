@@ -4,9 +4,15 @@
 // Client Component para la página de Inbox.
 // Textarea de captura rápida + lista de items con filtros por estado.
 // Story 6.1 — Captura Rápida Inbox.
+// Story 6.3 — Propuesta IA (tarjeta de propuesta + botones Procesar/Confirmar).
 
 import { useState, useTransition, useRef } from 'react'
-import { createInboxItem, discardInboxItem } from '@/actions/inbox'
+import {
+  createInboxItem,
+  discardInboxItem,
+  processInboxItem,
+  confirmInboxProposal,
+} from '@/actions/inbox'
 import type { InboxItem } from '@/lib/db/schema/inbox-items'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -47,6 +53,77 @@ function formatRelativeDate(date: Date): string {
   return `hace ${diffDays}d`
 }
 
+function formatSlot(date: Date): string {
+  return new Intl.DateTimeFormat('es', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date)
+}
+
+function formatDuration(minutes: number): string {
+  if (minutes < 60) return `${minutes} min`
+  const h = Math.floor(minutes / 60)
+  const m = minutes % 60
+  return m > 0 ? `${h}h ${m}min` : `${h}h`
+}
+
+// ─── ProposalCard sub-component ───────────────────────────────────────────────
+
+interface ProposalCardProps {
+  item: InboxItem
+  onConfirm: (itemId: string) => void
+  onDiscard: (itemId: string) => void
+  isLoading: boolean
+  confirmedId: string | null
+}
+
+function ProposalCard({ item, onConfirm, onDiscard, isLoading, confirmedId }: ProposalCardProps) {
+  const isConfirmed = confirmedId === item.id
+
+  if (isConfirmed) {
+    return (
+      <div className="mt-2 rounded-lg border border-green-200 bg-green-50 p-3">
+        <p className="text-sm font-medium text-green-700">✓ Activity creada en el calendario</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="mt-2 rounded-lg border border-blue-200 bg-blue-50 p-3 space-y-2">
+      <p className="text-xs font-semibold text-blue-700 uppercase tracking-wide">Propuesta IA</p>
+      {item.aiSuggestedTitle && (
+        <p className="text-sm font-medium text-foreground">{item.aiSuggestedTitle}</p>
+      )}
+      <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
+        {item.aiSuggestedSlot && <span>📅 {formatSlot(new Date(item.aiSuggestedSlot))}</span>}
+        {item.aiSuggestedDurationMinutes && (
+          <span>⏱ {formatDuration(item.aiSuggestedDurationMinutes)}</span>
+        )}
+        {item.aiClassification && <span className="capitalize">🏷 {item.aiClassification}</span>}
+      </div>
+      <div className="flex gap-2 pt-1">
+        <button
+          onClick={() => onConfirm(item.id)}
+          disabled={isLoading}
+          className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
+        >
+          {isLoading ? 'Confirmando...' : '✓ Confirmar'}
+        </button>
+        <button
+          onClick={() => onDiscard(item.id)}
+          disabled={isLoading}
+          className="rounded-md border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted disabled:opacity-50"
+        >
+          Descartar
+        </button>
+      </div>
+    </div>
+  )
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function InboxClient({ initialItems }: InboxClientProps) {
@@ -55,6 +132,7 @@ export function InboxClient({ initialItems }: InboxClientProps) {
   const [filter, setFilter] = useState<StatusFilter>('all')
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
+  const [confirmedId, setConfirmedId] = useState<string | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   // ── Submit ────────────────────────────────────────────────────────────────
@@ -96,6 +174,41 @@ export function InboxClient({ initialItems }: InboxClientProps) {
       setItems((prev) =>
         prev.map((item) => (item.id === itemId ? { ...item, status: 'discarded' as const } : item))
       )
+    })
+  }
+
+  // ── Process (IA) ──────────────────────────────────────────────────────────
+
+  function handleProcess(itemId: string) {
+    setErrorMsg(null)
+    // Optimistic: show 'processing' immediately
+    setItems((prev) =>
+      prev.map((item) => (item.id === itemId ? { ...item, status: 'processing' as const } : item))
+    )
+    startTransition(async () => {
+      const result = await processInboxItem(itemId)
+      if (!result.success) {
+        setErrorMsg(result.error ?? 'Error al procesar')
+        // Revert optimistic
+        setItems((prev) =>
+          prev.map((item) => (item.id === itemId ? { ...item, status: 'pending' as const } : item))
+        )
+      }
+      // On success, revalidatePath in the action will refresh the page data
+    })
+  }
+
+  // ── Confirm ───────────────────────────────────────────────────────────────
+
+  function handleConfirm(itemId: string) {
+    setErrorMsg(null)
+    startTransition(async () => {
+      const result = await confirmInboxProposal(itemId)
+      if (!result.success) {
+        setErrorMsg(result.error ?? 'Error al confirmar')
+        return
+      }
+      setConfirmedId(itemId)
     })
   }
 
@@ -185,31 +298,67 @@ export function InboxClient({ initialItems }: InboxClientProps) {
                     {formatRelativeDate(new Date(item.createdAt))}
                   </span>
                 </div>
+
+                {/* Proposal card for processed items without stepActivityId */}
+                {item.status === 'processed' && !item.stepActivityId && (
+                  <ProposalCard
+                    item={item}
+                    onConfirm={handleConfirm}
+                    onDiscard={handleDiscard}
+                    isLoading={isPending}
+                    confirmedId={confirmedId}
+                  />
+                )}
+
+                {/* Already confirmed — show link indicator */}
+                {item.status === 'processed' && item.stepActivityId && (
+                  <p className="mt-1 text-xs text-green-600">✓ Activity en calendario</p>
+                )}
+
+                {/* Manual fallback — show AI error if any */}
+                {item.status === 'manual' && item.aiError && (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    IA no disponible: procesamiento manual
+                  </p>
+                )}
               </div>
 
-              {item.status === 'pending' && (
-                <button
-                  onClick={() => handleDiscard(item.id)}
-                  disabled={isPending}
-                  title="Descartar"
-                  className="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
-                >
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    width="14"
-                    height="14"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <path d="M18 6 6 18" />
-                    <path d="m6 6 12 12" />
-                  </svg>
-                </button>
-              )}
+              {/* Action buttons by status */}
+              <div className="flex shrink-0 gap-1">
+                {item.status === 'pending' && (
+                  <>
+                    <button
+                      onClick={() => handleProcess(item.id)}
+                      disabled={isPending}
+                      title="Procesar con IA"
+                      className="rounded p-1 text-xs text-primary transition-colors hover:bg-primary/10 disabled:opacity-50"
+                    >
+                      ✨
+                    </button>
+                    <button
+                      onClick={() => handleDiscard(item.id)}
+                      disabled={isPending}
+                      title="Descartar"
+                      className="rounded p-1 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
+                    >
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="14"
+                        height="14"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <path d="M18 6 6 18" />
+                        <path d="m6 6 12 12" />
+                      </svg>
+                    </button>
+                  </>
+                )}
+              </div>
             </li>
           ))}
         </ul>
