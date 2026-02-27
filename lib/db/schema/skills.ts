@@ -22,6 +22,8 @@ export const skills = pgTable(
     timeInvestedSeconds: integer('time_invested_seconds').default(0).notNull(),
     /** true if suggested by the auto-detection engine, false if manually created */
     autoDetected: boolean('auto_detected').default(false).notNull(),
+    /** Soft-delete: null = active, timestamp = archived */
+    archivedAt: timestamp('archived_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
