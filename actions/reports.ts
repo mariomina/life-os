@@ -7,7 +7,6 @@
 // Story 8.6 — Generación de insights con LLM.
 // Story 8.7 — Agent Leverage Report.
 
-import { revalidatePath } from 'next/cache'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { db } from '@/lib/db/client'
 import { timeEntries } from '@/lib/db/schema/time-entries'
@@ -16,8 +15,16 @@ import { areas } from '@/lib/db/schema/areas'
 import { tasks } from '@/lib/db/schema/tasks'
 import { workflows } from '@/lib/db/schema/workflows'
 import { projects } from '@/lib/db/schema/projects'
-import { eq, and, gte, lte, isNotNull, sql, desc } from 'drizzle-orm'
+import { habits } from '@/lib/db/schema/habits'
+import { areaScores } from '@/lib/db/schema/area-scores'
+import { okrs } from '@/lib/db/schema/okrs'
+import { eq, and, gte, lte, isNotNull, isNull, sql, desc, avg, count } from 'drizzle-orm'
 import { getPeriodRange, type ReportPeriod } from '@/features/reports/periods'
+import {
+  computeHabitConsistency,
+  computeCCR,
+  computeAreaHealthTrend,
+} from '@/features/reports/metrics'
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
@@ -127,4 +134,187 @@ export async function getTimeByProject(period: ReportPeriod): Promise<TimeByProj
   })
 
   return result
+}
+
+// ─── Story 8.2: Habit Consistency ────────────────────────────────────────────
+
+export type { HabitConsistencyItem } from '@/features/reports/metrics'
+
+/**
+ * Returns habit completion rate per habit in the given period.
+ * Counts activities with habitId != null; planned vs completed.
+ */
+export async function getHabitConsistencyReport(period: ReportPeriod) {
+  const userId = await getAuthenticatedUserId()
+  const { from, to } = getPeriodRange(period)
+
+  const rows = await db
+    .select({
+      habitId: stepsActivities.habitId,
+      habitName: habits.title,
+      planned: sql<number>`COUNT(*) FILTER (WHERE ${stepsActivities.planned} = true)`,
+      completed: sql<number>`COUNT(*) FILTER (WHERE ${stepsActivities.planned} = true AND ${stepsActivities.status} = 'completed')`,
+    })
+    .from(stepsActivities)
+    .innerJoin(habits, eq(stepsActivities.habitId, habits.id))
+    .where(
+      and(
+        eq(stepsActivities.userId, userId),
+        isNotNull(stepsActivities.habitId),
+        gte(stepsActivities.scheduledAt, from),
+        lte(stepsActivities.scheduledAt, to)
+      )
+    )
+    .groupBy(stepsActivities.habitId, habits.title)
+
+  const mapped = rows.map((r) => ({
+    habitId: r.habitId ?? '',
+    habitName: r.habitName ?? '',
+    planned: Number(r.planned),
+    completed: Number(r.completed),
+  }))
+
+  return computeHabitConsistency(mapped)
+}
+
+// ─── Story 8.2: Calendar Commitment Rate (CCR) ───────────────────────────────
+
+export type { CCRResult } from '@/features/reports/metrics'
+
+/**
+ * Calendar Commitment Rate: ratio of planned activities that were completed.
+ */
+export async function getCalendarCommitmentRate(period: ReportPeriod) {
+  const userId = await getAuthenticatedUserId()
+  const { from, to } = getPeriodRange(period)
+
+  const rows = await db
+    .select({
+      planned: sql<number>`COUNT(*) FILTER (WHERE ${stepsActivities.planned} = true)`,
+      completed: sql<number>`COUNT(*) FILTER (WHERE ${stepsActivities.planned} = true AND ${stepsActivities.status} = 'completed')`,
+    })
+    .from(stepsActivities)
+    .where(
+      and(
+        eq(stepsActivities.userId, userId),
+        gte(stepsActivities.scheduledAt, from),
+        lte(stepsActivities.scheduledAt, to)
+      )
+    )
+
+  const row = rows[0]
+  return computeCCR(Number(row?.planned ?? 0), Number(row?.completed ?? 0))
+}
+
+// ─── Story 8.2: OKR Progress ─────────────────────────────────────────────────
+
+export interface OkrProgressItem {
+  okrId: string
+  objective: string
+  krs: { krId: string; title: string; progress: number }[]
+  avgProgress: number
+}
+
+/**
+ * Returns active annual OKRs with their key results and average progress.
+ */
+export async function getOkrProgressReport(): Promise<OkrProgressItem[]> {
+  const userId = await getAuthenticatedUserId()
+
+  const annualOkrs = await db
+    .select({ id: okrs.id, title: okrs.title, progress: okrs.progress })
+    .from(okrs)
+    .where(and(eq(okrs.userId, userId), eq(okrs.type, 'annual'), eq(okrs.status, 'active')))
+
+  if (annualOkrs.length === 0) return []
+
+  const annualIds = annualOkrs.map((o) => o.id)
+
+  const keyResults = await db
+    .select({ id: okrs.id, parentId: okrs.parentId, title: okrs.title, progress: okrs.progress })
+    .from(okrs)
+    .where(and(eq(okrs.userId, userId), eq(okrs.type, 'key_result'), eq(okrs.status, 'active')))
+
+  return annualOkrs.map((annual) => {
+    const krs = keyResults
+      .filter((kr) => kr.parentId === annual.id)
+      .map((kr) => ({ krId: kr.id, title: kr.title, progress: kr.progress }))
+    const avgProgress =
+      krs.length > 0
+        ? Math.round(krs.reduce((s, kr) => s + kr.progress, 0) / krs.length)
+        : annual.progress
+    return { okrId: annual.id, objective: annual.title, krs, avgProgress }
+  })
+}
+
+// ─── Story 8.2: Area Health Trends ───────────────────────────────────────────
+
+export interface AreaHealthTrendRow {
+  areaId: string
+  areaName: string
+  currentScore: number
+  previousScore: number
+  trend: 'improving' | 'declining' | 'stable'
+}
+
+/**
+ * Compares average area scores: last 30 days vs. prior 30 days.
+ */
+export async function getAreaHealthTrends(): Promise<AreaHealthTrendRow[]> {
+  const userId = await getAuthenticatedUserId()
+  const now = new Date()
+  const thirtyDaysAgo = new Date(now)
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
+  const sixtyDaysAgo = new Date(now)
+  sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60)
+
+  const thirtyDaysAgoDate = thirtyDaysAgo.toISOString().split('T')[0]
+  const sixtyDaysAgoDate = sixtyDaysAgo.toISOString().split('T')[0]
+  const nowDate = now.toISOString().split('T')[0]
+
+  const currentRows = await db
+    .select({
+      areaId: areaScores.areaId,
+      areaName: areas.name,
+      avgScore: sql<number>`AVG(${areaScores.score})`,
+    })
+    .from(areaScores)
+    .leftJoin(areas, eq(areaScores.areaId, areas.id))
+    .where(
+      and(
+        eq(areaScores.userId, userId),
+        gte(areaScores.scoredAt, thirtyDaysAgoDate),
+        lte(areaScores.scoredAt, nowDate)
+      )
+    )
+    .groupBy(areaScores.areaId, areas.name)
+
+  const previousRows = await db
+    .select({
+      areaId: areaScores.areaId,
+      avgScore: sql<number>`AVG(${areaScores.score})`,
+    })
+    .from(areaScores)
+    .where(
+      and(
+        eq(areaScores.userId, userId),
+        gte(areaScores.scoredAt, sixtyDaysAgoDate),
+        lte(areaScores.scoredAt, thirtyDaysAgoDate)
+      )
+    )
+    .groupBy(areaScores.areaId)
+
+  const previousMap = new Map(previousRows.map((r) => [r.areaId, Number(r.avgScore)]))
+
+  return currentRows.map((r) => {
+    const currentScore = Math.round(Number(r.avgScore))
+    const previousScore = Math.round(previousMap.get(r.areaId) ?? currentScore)
+    return {
+      areaId: r.areaId,
+      areaName: r.areaName ?? 'Área',
+      currentScore,
+      previousScore,
+      trend: computeAreaHealthTrend(currentScore, previousScore),
+    }
+  })
 }
