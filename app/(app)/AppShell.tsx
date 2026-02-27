@@ -4,14 +4,23 @@ import { useState } from 'react'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { Header } from '@/components/layout/Header'
 
-export default function AppShell({ children }: { children: React.ReactNode }) {
+interface AppShellProps {
+  children: React.ReactNode
+  pendingInboxCount: number
+}
+
+export default function AppShell({ children, pendingInboxCount }: AppShellProps) {
   const [sidebarOpen, setSidebarOpen] = useState(true)
 
   const toggleSidebar = () => setSidebarOpen((prev) => !prev)
 
   return (
     <div className="min-h-screen bg-[var(--background)]">
-      <Sidebar isOpen={sidebarOpen} onToggle={toggleSidebar} />
+      <Sidebar
+        isOpen={sidebarOpen}
+        onToggle={toggleSidebar}
+        pendingInboxCount={pendingInboxCount}
+      />
 
       {/* Main content — offset by sidebar width on xl+ */}
       <div

@@ -38,9 +38,10 @@ const navItems: NavItem[] = [
 interface SidebarProps {
   isOpen: boolean
   onToggle: () => void
+  pendingInboxCount?: number
 }
 
-export function Sidebar({ isOpen, onToggle }: SidebarProps) {
+export function Sidebar({ isOpen, onToggle, pendingInboxCount = 0 }: SidebarProps) {
   const pathname = usePathname()
 
   return (
@@ -85,6 +86,7 @@ export function Sidebar({ isOpen, onToggle }: SidebarProps) {
             {navItems.map((item) => {
               const isActive =
                 pathname === item.href || (item.href !== '/' && pathname.startsWith(item.href))
+              const showBadge = item.href === '/inbox' && pendingInboxCount > 0
               return (
                 <li key={item.href}>
                   <Link
@@ -97,7 +99,12 @@ export function Sidebar({ isOpen, onToggle }: SidebarProps) {
                     ].join(' ')}
                   >
                     <item.icon className="h-5 w-5 flex-shrink-0" />
-                    <span>{item.label}</span>
+                    <span className="flex-1">{item.label}</span>
+                    {showBadge && (
+                      <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-xs font-bold text-primary-foreground">
+                        {pendingInboxCount > 99 ? '99+' : pendingInboxCount}
+                      </span>
+                    )}
                   </Link>
                 </li>
               )
