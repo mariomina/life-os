@@ -241,6 +241,154 @@ export async function getActivitiesForMonth(
   }))
 }
 
+// ─── Free Slot Types ──────────────────────────────────────────────────────────
+
+export interface FreeSlot {
+  start: Date
+  end: Date
+  durationMinutes: number
+}
+
+/**
+ * Returns all steps_activities for a user scheduled within an explicit date range.
+ * Used by getFreeSlots to detect calendar gaps. Orders by scheduledAt ASC.
+ *
+ * @param userId    - The authenticated user's UUID
+ * @param startDate - Range start (inclusive)
+ * @param endDate   - Range end (inclusive)
+ */
+export async function getActivitiesForRange(
+  userId: string,
+  startDate: Date,
+  endDate: Date
+): Promise<ActivityForCalendar[]> {
+  assertDatabaseUrl()
+
+  const rows = await db
+    .select({
+      activity: stepsActivities,
+      areaName: areas.name,
+      areaLevel: areas.maslowLevel,
+      habitTitle: habits.title,
+    })
+    .from(stepsActivities)
+    .leftJoin(areas, eq(stepsActivities.areaId, areas.id))
+    .leftJoin(habits, eq(stepsActivities.habitId, habits.id))
+    .where(
+      and(
+        eq(stepsActivities.userId, userId),
+        gte(stepsActivities.scheduledAt, startDate),
+        lte(stepsActivities.scheduledAt, endDate)
+      )
+    )
+    .orderBy(asc(stepsActivities.scheduledAt))
+
+  return rows.map((row) => ({
+    id: row.activity.id,
+    title: row.activity.title,
+    scheduledAt: row.activity.scheduledAt!,
+    scheduledDurationMinutes: row.activity.scheduledDurationMinutes,
+    status: row.activity.status,
+    areaName: row.areaName ?? null,
+    areaColor: maslowLevelToColor(row.areaLevel ?? null),
+    habitTitle: row.habitTitle ?? null,
+    habitId: row.activity.habitId,
+  }))
+}
+
+/**
+ * Calculates free time slots in the user's calendar within the given date range.
+ * Works day by day within a 08:00–22:00 UTC window, finding gaps between activities.
+ *
+ * @param userId              - The authenticated user's UUID
+ * @param startDate           - Range start (uses UTC date)
+ * @param endDate             - Range end (uses UTC date)
+ * @param minDurationMinutes  - Minimum gap size to consider (default: 30 min)
+ * @returns Sorted array of free slots with start, end and duration
+ */
+export async function getFreeSlots(
+  userId: string,
+  startDate: Date,
+  endDate: Date,
+  minDurationMinutes = 30
+): Promise<FreeSlot[]> {
+  const activities = await getActivitiesForRange(userId, startDate, endDate)
+  const freeSlots: FreeSlot[] = []
+
+  // Iterate day by day over the range (UTC dates)
+  const rangeStart = new Date(startDate)
+  rangeStart.setUTCHours(0, 0, 0, 0)
+  const rangeEnd = new Date(endDate)
+  rangeEnd.setUTCHours(23, 59, 59, 999)
+
+  const current = new Date(rangeStart)
+  while (current <= rangeEnd) {
+    const dayStr = current.toISOString().slice(0, 10) // 'YYYY-MM-DD'
+    const year = parseInt(dayStr.slice(0, 4))
+    const month = parseInt(dayStr.slice(5, 7)) - 1
+    const day = parseInt(dayStr.slice(8, 10))
+
+    // Day window: 08:00–22:00 UTC
+    const windowStart = new Date(Date.UTC(year, month, day, 8, 0, 0, 0))
+    const windowEnd = new Date(Date.UTC(year, month, day, 22, 0, 0, 0))
+
+    // Activities that overlap this day's window
+    const dayActivities = activities.filter((a) => {
+      const aStart = a.scheduledAt
+      const aDuration = a.scheduledDurationMinutes ?? 30
+      const aEnd = new Date(aStart.getTime() + aDuration * 60_000)
+      return aStart < windowEnd && aEnd > windowStart
+    })
+
+    // Build sorted list of busy intervals clipped to the day window
+    const busyIntervals = dayActivities
+      .map((a) => {
+        const aStart = a.scheduledAt
+        const aDuration = a.scheduledDurationMinutes ?? 30
+        const aEnd = new Date(aStart.getTime() + aDuration * 60_000)
+        return {
+          start: aStart < windowStart ? windowStart : aStart,
+          end: aEnd > windowEnd ? windowEnd : aEnd,
+        }
+      })
+      .sort((a, b) => a.start.getTime() - b.start.getTime())
+
+    // Find gaps between busy intervals
+    let cursor = windowStart
+    for (const busy of busyIntervals) {
+      if (busy.start > cursor) {
+        const durationMs = busy.start.getTime() - cursor.getTime()
+        const durationMin = Math.floor(durationMs / 60_000)
+        if (durationMin >= minDurationMinutes) {
+          freeSlots.push({
+            start: new Date(cursor),
+            end: new Date(busy.start),
+            durationMinutes: durationMin,
+          })
+        }
+      }
+      if (busy.end > cursor) cursor = busy.end
+    }
+    // Gap after last activity to window end
+    if (cursor < windowEnd) {
+      const durationMs = windowEnd.getTime() - cursor.getTime()
+      const durationMin = Math.floor(durationMs / 60_000)
+      if (durationMin >= minDurationMinutes) {
+        freeSlots.push({
+          start: new Date(cursor),
+          end: new Date(windowEnd),
+          durationMinutes: durationMin,
+        })
+      }
+    }
+
+    // Advance to next day
+    current.setUTCDate(current.getUTCDate() + 1)
+  }
+
+  return freeSlots
+}
+
 /**
  * Returns all steps_activities for a user scheduled within the calendar year (UTC boundaries)
  * that contains the given date. Shares the same interface as getActivitiesForDay/Week/Month.

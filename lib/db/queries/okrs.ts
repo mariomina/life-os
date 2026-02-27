@@ -2,7 +2,7 @@
 // Queries de lectura para la tabla okrs.
 // Todas las funciones requieren userId explícito — no confiar solo en RLS.
 
-import { eq, and, count, sum, isNotNull } from 'drizzle-orm'
+import { eq, and, count, sum, isNotNull, or } from 'drizzle-orm'
 import { db, assertDatabaseUrl } from '@/lib/db/client'
 import { okrs } from '@/lib/db/schema/okrs'
 import { stepsActivities } from '@/lib/db/schema/steps-activities'
@@ -103,6 +103,57 @@ export async function getKRsByYear(userId: string, year: number): Promise<OKR[]>
     .from(okrs)
     .where(and(eq(okrs.userId, userId), eq(okrs.type, 'key_result'), eq(okrs.year, year)))
     .orderBy(okrs.quarter)
+}
+
+// ----------------------------------------------------------------
+// Active OKRs for AI Context (Story 6.2)
+// ----------------------------------------------------------------
+
+/**
+ * Returns OKRs relevant for the AI inbox classification context:
+ * - Annual OKRs with status='active' for the current year
+ * - Key Results with status='active' for the current year and current quarter
+ *
+ * Used by processInboxItem to give the AI context about the user's active goals.
+ */
+export async function getActiveOKRsForUser(
+  userId: string
+): Promise<Array<{ id: string; title: string; type: string; areaId: string | null }>> {
+  assertDatabaseUrl()
+
+  const now = new Date()
+  const currentYear = now.getUTCFullYear()
+  const currentMonth = now.getUTCMonth() // 0-indexed
+  const currentQuarter: 'Q1' | 'Q2' | 'Q3' | 'Q4' =
+    currentMonth < 3 ? 'Q1' : currentMonth < 6 ? 'Q2' : currentMonth < 9 ? 'Q3' : 'Q4'
+
+  const rows = await db
+    .select({
+      id: okrs.id,
+      title: okrs.title,
+      type: okrs.type,
+      areaId: okrs.areaId,
+    })
+    .from(okrs)
+    .where(
+      and(
+        eq(okrs.userId, userId),
+        eq(okrs.status, 'active'),
+        or(
+          // Annual OKRs for current year
+          and(eq(okrs.type, 'annual'), eq(okrs.year, currentYear)),
+          // Key Results for current year and quarter
+          and(
+            eq(okrs.type, 'key_result'),
+            eq(okrs.year, currentYear),
+            eq(okrs.quarter, currentQuarter)
+          )
+        )
+      )
+    )
+    .orderBy(okrs.type, okrs.quarter)
+
+  return rows
 }
 
 // ----------------------------------------------------------------

@@ -1,5 +1,6 @@
 import { pgTable, uuid, text, integer, timestamp, index } from 'drizzle-orm/pg-core'
 import { areas } from './areas'
+import { okrs } from './okrs'
 import { stepsActivities } from './steps-activities'
 
 /**
@@ -31,6 +32,9 @@ export const inboxItems = pgTable(
     aiSuggestedAreaId: uuid('ai_suggested_area_id').references(() => areas.id, {
       onDelete: 'set null',
     }),
+    aiSuggestedOkrId: uuid('ai_suggested_okr_id').references(() => okrs.id, {
+      onDelete: 'set null',
+    }),
     aiSuggestedSlot: timestamp('ai_suggested_slot', { withTimezone: true }),
     aiSuggestedTitle: text('ai_suggested_title'),
     aiSuggestedDurationMinutes: integer('ai_suggested_duration_minutes'),
@@ -50,6 +54,8 @@ export const inboxItems = pgTable(
     pendingIdx: index('inbox_items_user_status_idx').on(table.userId, table.status),
     /** Alert: inbox accumulated > 7 days */
     createdAtIdx: index('inbox_items_user_created_at_idx').on(table.userId, table.createdAt),
+    /** OKR suggestion lookup */
+    okrIdx: index('inbox_items_okr_idx').on(table.aiSuggestedOkrId),
   })
 )
 
