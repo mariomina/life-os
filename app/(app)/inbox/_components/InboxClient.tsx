@@ -5,6 +5,7 @@
 // Textarea de captura rápida + lista de items con filtros por estado.
 // Story 6.1 — Captura Rápida Inbox.
 // Story 6.3 — Propuesta IA (tarjeta de propuesta + botones Procesar/Confirmar).
+// Story 6.4 — Detección de proyecto emergente (ProjectProposalCard).
 
 import { useState, useTransition, useRef } from 'react'
 import {
@@ -12,8 +13,10 @@ import {
   discardInboxItem,
   processInboxItem,
   confirmInboxProposal,
+  createProjectFromInbox,
 } from '@/actions/inbox'
 import type { InboxItem } from '@/lib/db/schema/inbox-items'
+import type { WorkflowTemplate } from '@/lib/db/queries/workflow-templates'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -21,6 +24,7 @@ type StatusFilter = 'all' | 'pending' | 'processed' | 'discarded'
 
 interface InboxClientProps {
   initialItems: InboxItem[]
+  templates: WorkflowTemplate[]
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -124,15 +128,106 @@ function ProposalCard({ item, onConfirm, onDiscard, isLoading, confirmedId }: Pr
   )
 }
 
+// ─── ProjectProposalCard sub-component ───────────────────────────────────────
+
+const CATEGORY_LABELS: Record<string, string> = {
+  personal_development: 'Desarrollo Personal',
+  product_launch: 'Lanzamiento de Producto',
+  health_sprint: 'Health Sprint',
+  learning: 'Aprendizaje',
+  content_creation: 'Creación de Contenido',
+  financial_review: 'Revisión Financiera',
+  habit_building: 'Hábitos',
+  custom: 'Personalizado',
+}
+
+interface ProjectProposalCardProps {
+  item: InboxItem
+  templates: WorkflowTemplate[]
+  onCreateProject: (itemId: string, templateId?: string) => void
+  onDiscard: (itemId: string) => void
+  isLoading: boolean
+  confirmedProjectId: string | null
+}
+
+function ProjectProposalCard({
+  item,
+  templates,
+  onCreateProject,
+  onDiscard,
+  isLoading,
+  confirmedProjectId,
+}: ProjectProposalCardProps) {
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>('')
+  const isConfirmed = confirmedProjectId === item.id
+
+  if (isConfirmed) {
+    return (
+      <div className="mt-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+        <p className="text-sm font-medium text-emerald-700">✓ Proyecto creado. Ver en Proyectos.</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="mt-2 rounded-lg border border-violet-200 bg-violet-50 p-3 space-y-2">
+      <p className="text-xs font-semibold text-violet-700 uppercase tracking-wide">
+        Proyecto Detectado
+      </p>
+      {item.aiSuggestedTitle && (
+        <p className="text-sm font-medium text-foreground">{item.aiSuggestedTitle}</p>
+      )}
+      <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
+        {item.aiClassification && <span className="capitalize">📁 {item.aiClassification}</span>}
+      </div>
+      {templates.length > 0 && (
+        <div>
+          <label className="mb-1 block text-xs text-muted-foreground">Template de workflow</label>
+          <select
+            value={selectedTemplateId}
+            onChange={(e) => setSelectedTemplateId(e.target.value)}
+            disabled={isLoading}
+            className="w-full rounded-md border border-input bg-background px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50"
+          >
+            <option value="">Sin template</option>
+            {templates.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name} — {CATEGORY_LABELS[t.category] ?? t.category}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+      <div className="flex gap-2 pt-1">
+        <button
+          onClick={() => onCreateProject(item.id, selectedTemplateId || undefined)}
+          disabled={isLoading}
+          className="rounded-md bg-violet-600 px-3 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+        >
+          {isLoading ? 'Creando...' : '✓ Crear Proyecto'}
+        </button>
+        <button
+          onClick={() => onDiscard(item.id)}
+          disabled={isLoading}
+          className="rounded-md border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted disabled:opacity-50"
+        >
+          Descartar
+        </button>
+      </div>
+    </div>
+  )
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export function InboxClient({ initialItems }: InboxClientProps) {
+export function InboxClient({ initialItems, templates }: InboxClientProps) {
   const [items, setItems] = useState<InboxItem[]>(initialItems)
   const [text, setText] = useState('')
   const [filter, setFilter] = useState<StatusFilter>('all')
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
   const [confirmedId, setConfirmedId] = useState<string | null>(null)
+  const [confirmedProjectId, setConfirmedProjectId] = useState<string | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   // ── Submit ────────────────────────────────────────────────────────────────
@@ -209,6 +304,20 @@ export function InboxClient({ initialItems }: InboxClientProps) {
         return
       }
       setConfirmedId(itemId)
+    })
+  }
+
+  // ── Create Project ────────────────────────────────────────────────────────
+
+  function handleCreateProject(itemId: string, templateId?: string) {
+    setErrorMsg(null)
+    startTransition(async () => {
+      const result = await createProjectFromInbox(itemId, templateId)
+      if (!result.success) {
+        setErrorMsg(result.error ?? 'Error al crear el proyecto')
+        return
+      }
+      setConfirmedProjectId(itemId)
     })
   }
 
@@ -299,20 +408,41 @@ export function InboxClient({ initialItems }: InboxClientProps) {
                   </span>
                 </div>
 
-                {/* Proposal card for processed items without stepActivityId */}
-                {item.status === 'processed' && !item.stepActivityId && (
-                  <ProposalCard
-                    item={item}
-                    onConfirm={handleConfirm}
-                    onDiscard={handleDiscard}
-                    isLoading={isPending}
-                    confirmedId={confirmedId}
-                  />
-                )}
+                {/* Project proposal card for processed items classified as 'project' */}
+                {item.status === 'processed' &&
+                  item.aiClassification === 'project' &&
+                  !item.projectId && (
+                    <ProjectProposalCard
+                      item={item}
+                      templates={templates}
+                      onCreateProject={handleCreateProject}
+                      onDiscard={handleDiscard}
+                      isLoading={isPending}
+                      confirmedProjectId={confirmedProjectId}
+                    />
+                  )}
 
-                {/* Already confirmed — show link indicator */}
+                {/* Activity proposal card for processed items NOT classified as project */}
+                {item.status === 'processed' &&
+                  item.aiClassification !== 'project' &&
+                  !item.stepActivityId && (
+                    <ProposalCard
+                      item={item}
+                      onConfirm={handleConfirm}
+                      onDiscard={handleDiscard}
+                      isLoading={isPending}
+                      confirmedId={confirmedId}
+                    />
+                  )}
+
+                {/* Already confirmed as activity */}
                 {item.status === 'processed' && item.stepActivityId && (
                   <p className="mt-1 text-xs text-green-600">✓ Activity en calendario</p>
+                )}
+
+                {/* Already converted to project */}
+                {item.status === 'processed' && item.projectId && (
+                  <p className="mt-1 text-xs text-violet-600">✓ Proyecto creado</p>
                 )}
 
                 {/* Manual fallback — show AI error if any */}

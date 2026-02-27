@@ -6,12 +6,14 @@
 // Story 6.1 — Captura Rápida Inbox.
 // Story 6.2 — Pipeline IA: clasificación + área/OKR sugerido + detección huecos.
 // Story 6.3 — Confirmación 1-click: propuesta IA → activity creada en calendario.
+// Story 6.4 — Detección de proyecto emergente: propuesta IA → project creado.
 
 import { revalidatePath } from 'next/cache'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { db, assertDatabaseUrl } from '@/lib/db/client'
 import { inboxItems } from '@/lib/db/schema/inbox-items'
 import { stepsActivities } from '@/lib/db/schema/steps-activities'
+import { projects } from '@/lib/db/schema/projects'
 import { getInboxItemsByUser } from '@/lib/db/queries/inbox'
 import { getFreeSlots } from '@/lib/db/queries/calendar'
 import { getActiveOKRsForUser } from '@/lib/db/queries/okrs'
@@ -38,6 +40,13 @@ export interface ConfirmInboxResult {
   success: boolean
   /** ID of the created StepActivity when confirmation succeeds */
   stepActivityId?: string
+  error?: string
+}
+
+export interface CreateProjectFromInboxResult {
+  success: boolean
+  /** ID of the created Project when conversion succeeds */
+  projectId?: string
   error?: string
 }
 
@@ -304,5 +313,84 @@ export async function confirmInboxProposal(itemId: string): Promise<ConfirmInbox
   } catch (err) {
     console.error('[confirmInboxProposal] failed:', err)
     return { success: false, error: 'Error al confirmar la propuesta' }
+  }
+}
+
+/**
+ * Converts an inbox item classified as 'project' into a Project.
+ * Story 6.4 — Detección de proyecto emergente.
+ *
+ * Guards:
+ * - Item must exist and belong to the authenticated user
+ * - Item status must be 'processed' (has a valid AI proposal)
+ * - Item must not already have a projectId (prevents duplicate conversion)
+ * - Item must have aiSuggestedAreaId (required FK for projects)
+ *
+ * On success:
+ * - Inserts a new Project with AI-proposed fields + optional templateId
+ * - Updates inbox_items.projectId with the new project ID
+ * - Revalidates /inbox and /projects
+ */
+export async function createProjectFromInbox(
+  itemId: string,
+  templateId?: string
+): Promise<CreateProjectFromInboxResult> {
+  if (!itemId?.trim()) return { success: false, error: 'ID de item inválido' }
+
+  try {
+    assertDatabaseUrl()
+    const userId = await getAuthenticatedUserId()
+
+    // Fetch item with ownership check
+    const itemRows = await db
+      .select()
+      .from(inboxItems)
+      .where(and(eq(inboxItems.id, itemId), eq(inboxItems.userId, userId)))
+      .limit(1)
+
+    const item = itemRows[0]
+    if (!item) return { success: false, error: 'Item no encontrado' }
+
+    // Guard: must have AI proposal ready
+    if (item.status !== 'processed') {
+      return { success: false, error: 'El item no tiene propuesta IA lista' }
+    }
+
+    // Guard: prevent double conversion
+    if (item.projectId) {
+      return { success: false, error: 'Este item ya fue convertido en proyecto' }
+    }
+
+    // Guard: area is required for Project insert
+    if (!item.aiSuggestedAreaId) {
+      return { success: false, error: 'El item no tiene área sugerida' }
+    }
+
+    // Insert the new Project
+    const [newProject] = await db
+      .insert(projects)
+      .values({
+        userId,
+        areaId: item.aiSuggestedAreaId,
+        title: item.aiSuggestedTitle ?? item.rawText,
+        okrId: item.aiSuggestedOkrId ?? undefined,
+        templateId: templateId ?? undefined,
+        status: 'active',
+      })
+      .returning({ id: projects.id })
+
+    // Link inbox item to the created project
+    await db
+      .update(inboxItems)
+      .set({ projectId: newProject.id, updatedAt: new Date() })
+      .where(eq(inboxItems.id, itemId))
+
+    revalidatePath('/inbox')
+    revalidatePath('/projects')
+
+    return { success: true, projectId: newProject.id }
+  } catch (err) {
+    console.error('[createProjectFromInbox] failed:', err)
+    return { success: false, error: 'Error al crear el proyecto' }
   }
 }

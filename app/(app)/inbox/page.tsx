@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { getInboxItemsByUser } from '@/lib/db/queries/inbox'
+import { getSystemWorkflowTemplates } from '@/lib/db/queries/workflow-templates'
 import { InboxClient } from './_components/InboxClient'
 
 /**
@@ -9,6 +10,7 @@ import { InboxClient } from './_components/InboxClient'
  * Carga los items del inbox del usuario autenticado y renderiza
  * el Client Component que gestiona captura, filtros y descarte.
  * Story 6.1 — Captura Rápida Inbox.
+ * Story 6.4 — Carga templates del sistema para ProjectProposalCard.
  */
 export default async function InboxPage() {
   const supabase = await createSupabaseServerClient()
@@ -20,7 +22,10 @@ export default async function InboxPage() {
     redirect('/login')
   }
 
-  const items = await getInboxItemsByUser(user.id)
+  const [items, templates] = await Promise.all([
+    getInboxItemsByUser(user.id),
+    getSystemWorkflowTemplates(),
+  ])
 
   return (
     <div className="space-y-6">
@@ -33,7 +38,7 @@ export default async function InboxPage() {
       </section>
 
       {/* Capture + List */}
-      <InboxClient initialItems={items} />
+      <InboxClient initialItems={items} templates={templates} />
     </div>
   )
 }

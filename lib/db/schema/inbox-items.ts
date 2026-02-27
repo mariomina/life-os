@@ -1,6 +1,7 @@
 import { pgTable, uuid, text, integer, timestamp, index } from 'drizzle-orm/pg-core'
 import { areas } from './areas'
 import { okrs } from './okrs'
+import { projects } from './projects'
 import { stepsActivities } from './steps-activities'
 
 /**
@@ -45,6 +46,10 @@ export const inboxItems = pgTable(
     stepActivityId: uuid('step_activity_id').references(() => stepsActivities.id, {
       onDelete: 'set null',
     }),
+    /** Set when user converts item to a project (classification='project') */
+    projectId: uuid('project_id').references(() => projects.id, {
+      onDelete: 'set null',
+    }),
     processedAt: timestamp('processed_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
@@ -56,6 +61,8 @@ export const inboxItems = pgTable(
     createdAtIdx: index('inbox_items_user_created_at_idx').on(table.userId, table.createdAt),
     /** OKR suggestion lookup */
     okrIdx: index('inbox_items_okr_idx').on(table.aiSuggestedOkrId),
+    /** Project link lookup */
+    projectIdx: index('inbox_items_project_idx').on(table.projectId),
   })
 )
 
