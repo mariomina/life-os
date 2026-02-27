@@ -11,6 +11,8 @@ import { revalidatePath } from 'next/cache'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { db, assertDatabaseUrl } from '@/lib/db/client'
 import { skills } from '@/lib/db/schema/skills'
+import { stepSkillTags } from '@/lib/db/schema/step-skill-tags'
+import { stepsActivities } from '@/lib/db/schema/steps-activities'
 import { eq, and } from 'drizzle-orm'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -165,5 +167,93 @@ export async function archiveSkill(skillId: string): Promise<SkillActionResult> 
   } catch (err) {
     console.error('[archiveSkill] failed:', err)
     return { success: false, error: 'Error al archivar la habilidad' }
+  }
+}
+
+/**
+ * Tags a step activity with a skill (inserts into step_skill_tags).
+ * Idempotent: duplicate tag returns { success: true } without error.
+ * Ownership guard: both activity and skill must belong to the authenticated user.
+ * Story 7.2 — AC1, AC2, AC3.
+ */
+export async function tagActivityWithSkill(
+  stepActivityId: string,
+  skillId: string
+): Promise<SkillActionResult> {
+  if (!stepActivityId?.trim()) return { success: false, error: 'ID de actividad inválido' }
+  if (!skillId?.trim()) return { success: false, error: 'ID de habilidad inválido' }
+
+  try {
+    assertDatabaseUrl()
+    const userId = await getAuthenticatedUserId()
+
+    // Ownership: activity must belong to user
+    const [activity] = await db
+      .select({ id: stepsActivities.id })
+      .from(stepsActivities)
+      .where(and(eq(stepsActivities.id, stepActivityId), eq(stepsActivities.userId, userId)))
+      .limit(1)
+
+    if (!activity) return { success: false, error: 'No autorizado' }
+
+    // Ownership: skill must belong to user
+    const [skill] = await db
+      .select({ id: skills.id })
+      .from(skills)
+      .where(and(eq(skills.id, skillId), eq(skills.userId, userId)))
+      .limit(1)
+
+    if (!skill) return { success: false, error: 'No autorizado' }
+
+    await db.insert(stepSkillTags).values({ stepActivityId, skillId, userId }).onConflictDoNothing()
+
+    revalidatePath('/calendar')
+    revalidatePath('/skills')
+    return { success: true }
+  } catch (err) {
+    console.error('[tagActivityWithSkill] failed:', err)
+    return { success: false, error: 'Error al etiquetar la actividad' }
+  }
+}
+
+/**
+ * Removes a skill tag from a step activity.
+ * Ownership guard: the tag must belong to the authenticated user.
+ * Story 7.2 — AC4.
+ */
+export async function removeSkillTag(
+  stepActivityId: string,
+  skillId: string
+): Promise<SkillActionResult> {
+  if (!stepActivityId?.trim()) return { success: false, error: 'ID de actividad inválido' }
+  if (!skillId?.trim()) return { success: false, error: 'ID de habilidad inválido' }
+
+  try {
+    assertDatabaseUrl()
+    const userId = await getAuthenticatedUserId()
+
+    // Ownership check
+    const [tag] = await db
+      .select({ id: stepSkillTags.id })
+      .from(stepSkillTags)
+      .where(
+        and(
+          eq(stepSkillTags.stepActivityId, stepActivityId),
+          eq(stepSkillTags.skillId, skillId),
+          eq(stepSkillTags.userId, userId)
+        )
+      )
+      .limit(1)
+
+    if (!tag) return { success: false, error: 'Tag no encontrado' }
+
+    await db.delete(stepSkillTags).where(eq(stepSkillTags.id, tag.id))
+
+    revalidatePath('/calendar')
+    revalidatePath('/skills')
+    return { success: true }
+  } catch (err) {
+    console.error('[removeSkillTag] failed:', err)
+    return { success: false, error: 'Error al eliminar el tag' }
   }
 }

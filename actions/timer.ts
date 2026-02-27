@@ -5,11 +5,13 @@
 // Start / Stop / Pause / Resume de entradas en time_entries.
 // Story 5.8 — Time Tracking Start/Stop Explícito, Pausas con Razón, Duración Automática.
 
-import { eq, and, isNotNull, inArray, sum } from 'drizzle-orm'
+import { eq, and, isNotNull, inArray, sum, sql } from 'drizzle-orm'
 import { revalidatePath } from 'next/cache'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { db, assertDatabaseUrl } from '@/lib/db/client'
 import { timeEntries } from '@/lib/db/schema/time-entries'
+import { stepSkillTags } from '@/lib/db/schema/step-skill-tags'
+import { skills } from '@/lib/db/schema/skills'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -96,6 +98,30 @@ export async function stopTimer(entryId: string): Promise<TimerActionResult> {
       .update(timeEntries)
       .set({ endedAt: now, durationSeconds, isActive: false, updatedAt: now })
       .where(and(eq(timeEntries.id, entryId), eq(timeEntries.userId, userId)))
+
+    // Story 7.2 — AC5: Propagate time to skills tagged to this activity
+    const tags = await db
+      .select({ skillId: stepSkillTags.skillId })
+      .from(stepSkillTags)
+      .where(eq(stepSkillTags.stepActivityId, entry.stepActivityId))
+
+    if (tags.length > 0) {
+      await db
+        .update(skills)
+        .set({
+          timeInvestedSeconds: sql`${skills.timeInvestedSeconds} + ${durationSeconds}`,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            inArray(
+              skills.id,
+              tags.map((t) => t.skillId)
+            ),
+            eq(skills.userId, userId)
+          )
+        )
+    }
 
     revalidatePath('/calendar')
     return { error: null }

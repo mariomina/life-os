@@ -39,6 +39,7 @@ import {
 import { NewActivityModal } from './NewActivityModal'
 import type { AreaOption } from '@/actions/calendar'
 import { createSupabaseBrowserClient } from '@/lib/supabase/client'
+import type { Skill } from '@/lib/db/schema/skills'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -57,6 +58,10 @@ interface CalendarClientProps {
   initialActiveTimers?: Record<string, string>
   /** Record<activityId, startedAt ISO> — start time of the active session (Story 5.9) */
   initialTimerStartedAt?: Record<string, string>
+  /** Active skills for the tag selector (Story 7.2) */
+  userSkills?: Skill[]
+  /** Record<activityId, skillId[]> — pre-loaded skill tags per activity (Story 7.2) */
+  initialSkillTags?: Record<string, string[]>
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -310,6 +315,69 @@ function EventActionButtons({
   )
 }
 
+// ─── Skill Tag Section (Story 7.2) ────────────────────────────────────────────
+
+function SkillTagSection({
+  activityId,
+  userSkills,
+  taggedSkillIds,
+  onTagSkill,
+  onRemoveSkillTag,
+}: {
+  activityId: string
+  userSkills: Skill[]
+  taggedSkillIds: string[]
+  onTagSkill: (activityId: string, skillId: string) => void
+  onRemoveSkillTag: (activityId: string, skillId: string) => void
+}) {
+  if (userSkills.length === 0) return null
+  const untagged = userSkills.filter((s) => !taggedSkillIds.includes(s.id))
+
+  return (
+    <div className="mt-1.5 space-y-1">
+      {taggedSkillIds.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {taggedSkillIds.map((skillId) => {
+            const skill = userSkills.find((s) => s.id === skillId)
+            if (!skill) return null
+            return (
+              <span
+                key={skillId}
+                className="inline-flex items-center gap-0.5 rounded-full bg-violet-100 px-1.5 py-0.5 text-[10px] font-medium text-violet-700 dark:bg-violet-900/30 dark:text-violet-300"
+              >
+                {skill.name}
+                <button
+                  aria-label={`Quitar ${skill.name}`}
+                  onClick={() => onRemoveSkillTag(activityId, skillId)}
+                  className="ml-0.5 leading-none hover:text-red-500"
+                >
+                  ×
+                </button>
+              </span>
+            )
+          })}
+        </div>
+      )}
+      {untagged.length > 0 && (
+        <select
+          value=""
+          onChange={(e) => {
+            if (e.target.value) onTagSkill(activityId, e.target.value)
+          }}
+          className="text-[10px] rounded border border-border bg-background px-1 py-0.5 text-muted-foreground"
+        >
+          <option value="">+ Etiquetar habilidad</option>
+          {untagged.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.name}
+            </option>
+          ))}
+        </select>
+      )}
+    </div>
+  )
+}
+
 // ─── Sub-views ────────────────────────────────────────────────────────────────
 
 function WeekView({ currentDate, events }: { currentDate: Date; events: ICalendarEvent[] }) {
@@ -451,6 +519,10 @@ function DayView({
   onStopTimer,
   onPauseTimer,
   onResumeTimer,
+  userSkills,
+  skillTags,
+  onTagSkill,
+  onRemoveSkillTag,
 }: {
   currentDate: Date
   events: ICalendarEvent[]
@@ -465,6 +537,11 @@ function DayView({
   onStopTimer: (activityId: string, entryId: string) => void
   onPauseTimer: (activityId: string, entryId: string) => void
   onResumeTimer: (activityId: string, entryId: string) => void
+  /** Story 7.2 — Skill tag selector */
+  userSkills: Skill[]
+  skillTags: Record<string, string[]>
+  onTagSkill: (activityId: string, skillId: string) => void
+  onRemoveSkillTag: (activityId: string, skillId: string) => void
 }) {
   const router = useRouter()
   const hours = getDayHourSlots(currentDate, 7, 22)
@@ -524,6 +601,13 @@ function DayView({
                       onStopTimer={onStopTimer}
                       onPauseTimer={onPauseTimer}
                       onResumeTimer={onResumeTimer}
+                    />
+                    <SkillTagSection
+                      activityId={evt.id}
+                      userSkills={userSkills}
+                      taggedSkillIds={skillTags[evt.id] ?? []}
+                      onTagSkill={onTagSkill}
+                      onRemoveSkillTag={onRemoveSkillTag}
                     />
                   </div>
                 )
@@ -664,6 +748,8 @@ export function CalendarClient({
   timeTotals = {},
   initialActiveTimers = {},
   initialTimerStartedAt = {},
+  userSkills = [],
+  initialSkillTags = {},
 }: CalendarClientProps) {
   const [view, setView] = useState<TCalendarView>(defaultView)
   const [currentDate, setCurrentDate] = useState(new Date())
@@ -693,6 +779,9 @@ export function CalendarClient({
 
   // Story 5.9 — Tick state: updated every second when there are active timers
   const [elapsedTick, setElapsedTick] = useState(() => Date.now())
+
+  // Story 7.2 — Skill tags per activity (activityId → skillId[])
+  const [skillTags, setSkillTags] = useState<Record<string, string[]>>(() => initialSkillTags)
 
   // Story 5.9 — AC1: Live clock — setInterval every 1s while any non-paused timer runs
   useEffect(() => {
@@ -892,6 +981,38 @@ export function CalendarClient({
     })
   }
 
+  // ─── Skill tag handlers (Story 7.2) ─────────────────────────────────────────
+
+  function handleTagSkill(activityId: string, skillId: string) {
+    import('@/actions/skills').then(({ tagActivityWithSkill }) => {
+      tagActivityWithSkill(activityId, skillId).then((result) => {
+        if (result.success) {
+          setSkillTags((prev) => ({
+            ...prev,
+            [activityId]: [...(prev[activityId] ?? []), skillId],
+          }))
+        } else {
+          showToast(`Error: ${result.error}`)
+        }
+      })
+    })
+  }
+
+  function handleRemoveSkillTag(activityId: string, skillId: string) {
+    import('@/actions/skills').then(({ removeSkillTag }) => {
+      removeSkillTag(activityId, skillId).then((result) => {
+        if (result.success) {
+          setSkillTags((prev) => ({
+            ...prev,
+            [activityId]: (prev[activityId] ?? []).filter((id) => id !== skillId),
+          }))
+        } else {
+          showToast(`Error: ${result.error}`)
+        }
+      })
+    })
+  }
+
   return (
     <div className="flex flex-col h-full rounded-xl border border-border bg-card overflow-hidden">
       {/* Toolbar */}
@@ -976,6 +1097,10 @@ export function CalendarClient({
             onStopTimer={handleStopTimer}
             onPauseTimer={handlePauseTimer}
             onResumeTimer={handleResumeTimer}
+            userSkills={userSkills}
+            skillTags={skillTags}
+            onTagSkill={handleTagSkill}
+            onRemoveSkillTag={handleRemoveSkillTag}
           />
         )}
         {view === 'year' && <YearView currentDate={currentDate} events={events} />}

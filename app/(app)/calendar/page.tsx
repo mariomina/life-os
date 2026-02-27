@@ -15,6 +15,7 @@ import {
   getActiveTimersForActivities,
   getActiveTimerStartTimes,
 } from '@/actions/timer'
+import { getUserSkills, getSkillTagsForActivities } from '@/lib/db/queries/skills'
 import type { ICalendarEvent } from '@/lib/calendar/calendar-utils'
 
 export default async function CalendarPage() {
@@ -55,18 +56,28 @@ export default async function CalendarPage() {
 
   const areasData = areas.status === 'fulfilled' ? areas.value : []
 
-  // Fetch time tracking data for all activities in parallel (Story 5.8 + 5.9)
+  // Fetch time tracking data + skills data in parallel (Story 5.8 + 5.9 + 7.2)
   const activityIds = events.map((e) => e.id)
-  const [timeTotalsResult, activeTimersResult, timerStartTimesResult] = await Promise.allSettled([
+  const [
+    timeTotalsResult,
+    activeTimersResult,
+    timerStartTimesResult,
+    userSkillsResult,
+    skillTagsResult,
+  ] = await Promise.allSettled([
     getTimeTotalsForActivities(user.id, activityIds),
     getActiveTimersForActivities(user.id, activityIds),
     getActiveTimerStartTimes(user.id, activityIds),
+    getUserSkills(user.id),
+    getSkillTagsForActivities(activityIds, user.id),
   ])
 
   const timeTotals = timeTotalsResult.status === 'fulfilled' ? timeTotalsResult.value : {}
   const activeTimers = activeTimersResult.status === 'fulfilled' ? activeTimersResult.value : {}
   const timerStartTimes =
     timerStartTimesResult.status === 'fulfilled' ? timerStartTimesResult.value : {}
+  const userSkills = userSkillsResult.status === 'fulfilled' ? userSkillsResult.value : []
+  const initialSkillTags = skillTagsResult.status === 'fulfilled' ? skillTagsResult.value : {}
 
   return (
     <div className="flex flex-col gap-4 h-[calc(100vh-8rem)]">
@@ -86,6 +97,8 @@ export default async function CalendarPage() {
         timeTotals={timeTotals}
         initialActiveTimers={activeTimers}
         initialTimerStartedAt={timerStartTimes}
+        userSkills={userSkills}
+        initialSkillTags={initialSkillTags}
       />
     </div>
   )
