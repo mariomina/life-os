@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { getUserSkills } from '@/lib/db/queries/skills'
 import { getUserAreas } from '@/lib/db/queries/areas'
+import { suggestSkillFromActivities } from '@/actions/skills'
 import { SkillsClient } from './_components/SkillsClient'
 
 /**
@@ -21,7 +22,12 @@ export default async function SkillsPage() {
     redirect('/login')
   }
 
-  const [skills, areas] = await Promise.all([getUserSkills(user.id), getUserAreas(user.id)])
+  // Load skills, areas, and emerging suggestions in parallel (Story 7.3)
+  const [skills, areas, suggestions] = await Promise.all([
+    getUserSkills(user.id),
+    getUserAreas(user.id),
+    suggestSkillFromActivities(),
+  ])
 
   return (
     <div className="space-y-6">
@@ -33,8 +39,8 @@ export default async function SkillsPage() {
         </p>
       </section>
 
-      {/* Skills list + CRUD */}
-      <SkillsClient initialSkills={skills} areas={areas} />
+      {/* Skills list + CRUD + Emerging suggestions */}
+      <SkillsClient initialSkills={skills} areas={areas} initialSuggestions={suggestions} />
     </div>
   )
 }

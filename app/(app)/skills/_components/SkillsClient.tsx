@@ -5,18 +5,23 @@
 // Lista de skills con badges de nivel, formulario de creación y acciones.
 // Story 7.1 — CRUD Habilidades.
 
-import { useState, useTransition } from 'react'
-import { createSkill, updateSkill, archiveSkill } from '@/actions/skills'
+import { useState, useTransition, useMemo } from 'react'
+import { createSkill, updateSkill, archiveSkill, confirmEmergingSkill } from '@/actions/skills'
 import type { Skill } from '@/lib/db/schema/skills'
 import type { Area } from '@/lib/db/schema/areas'
+import type { EmergingSkillSuggestion } from '@/features/skills/detection'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type SkillLevel = 'beginner' | 'intermediate' | 'advanced' | 'expert'
 
+const DISMISS_KEY = 'life_os_dismissed_skill_suggestions'
+
 interface SkillsClientProps {
   initialSkills: Skill[]
   areas: Area[]
+  /** Story 7.3 — Suggestions from the auto-detection engine */
+  initialSuggestions?: EmergingSkillSuggestion[]
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -45,12 +50,30 @@ function formatSkillTime(seconds: number): string {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export function SkillsClient({ initialSkills, areas }: SkillsClientProps) {
+export function SkillsClient({ initialSkills, areas, initialSuggestions = [] }: SkillsClientProps) {
   const [skills, setSkills] = useState<Skill[]>(initialSkills)
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
+
+  // ── Emerging skills state (Story 7.3) ─────────────────────────────────────
+
+  const [dismissedTerms, setDismissedTerms] = useState<string[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem(DISMISS_KEY) ?? '[]') as string[]
+    } catch {
+      return []
+    }
+  })
+  const [confirmingTerm, setConfirmingTerm] = useState<string | null>(null)
+  const [confirmLevel, setConfirmLevel] = useState<SkillLevel>('beginner')
+  const [confirmAreaId, setConfirmAreaId] = useState<string>('')
+
+  const visibleSuggestions = useMemo(
+    () => initialSuggestions.filter((s) => !dismissedTerms.includes(s.term.toLowerCase())),
+    [initialSuggestions, dismissedTerms]
+  )
 
   // ── Create form state ─────────────────────────────────────────────────────
 
@@ -130,10 +153,122 @@ export function SkillsClient({ initialSkills, areas }: SkillsClientProps) {
     })
   }
 
+  // ── Emerging skill handlers (Story 7.3) ───────────────────────────────────
+
+  function handleDismissSuggestion(term: string) {
+    const lower = term.toLowerCase()
+    const updated = [...dismissedTerms, lower]
+    setDismissedTerms(updated)
+    localStorage.setItem(DISMISS_KEY, JSON.stringify(updated))
+  }
+
+  function handleConfirmSuggestion(term: string) {
+    setErrorMsg(null)
+    startTransition(async () => {
+      const result = await confirmEmergingSkill(term, confirmLevel, confirmAreaId || null)
+      if (!result.success) {
+        setErrorMsg(result.error ?? 'Error al registrar skill')
+        return
+      }
+      handleDismissSuggestion(term)
+      setConfirmingTerm(null)
+    })
+  }
+
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
     <div className="space-y-6">
+      {/* Emerging skills banner (Story 7.3 — AC6) */}
+      {visibleSuggestions.length > 0 && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 space-y-3 dark:bg-amber-950/20 dark:border-amber-800">
+          <h3 className="text-sm font-semibold text-amber-800 dark:text-amber-300">
+            ✨ Habilidades emergentes detectadas
+          </h3>
+          <div className="space-y-2">
+            {visibleSuggestions.map((suggestion) => (
+              <div key={suggestion.term} className="space-y-2">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <span className="font-medium text-sm capitalize text-foreground">
+                      {suggestion.term}
+                    </span>
+                    <span className="ml-2 text-xs text-muted-foreground">
+                      {formatSkillTime(suggestion.totalSeconds)} en {suggestion.activityCount}{' '}
+                      actividades
+                    </span>
+                  </div>
+                  <div className="flex shrink-0 gap-2">
+                    <button
+                      onClick={() => {
+                        setConfirmingTerm(suggestion.term)
+                        setConfirmLevel('beginner')
+                        setConfirmAreaId('')
+                      }}
+                      disabled={isPending}
+                      className="rounded-md bg-amber-600 px-2 py-1 text-xs font-medium text-white hover:bg-amber-700 disabled:opacity-50"
+                    >
+                      ✓ Registrar skill
+                    </button>
+                    <button
+                      onClick={() => handleDismissSuggestion(suggestion.term)}
+                      disabled={isPending}
+                      className="rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:bg-muted disabled:opacity-50"
+                    >
+                      Ignorar
+                    </button>
+                  </div>
+                </div>
+                {/* Mini-form for confirming */}
+                {confirmingTerm === suggestion.term && (
+                  <div className="flex flex-wrap gap-2 items-center pl-2 border-l-2 border-amber-300">
+                    <select
+                      value={confirmLevel}
+                      onChange={(e) => setConfirmLevel(e.target.value as SkillLevel)}
+                      disabled={isPending}
+                      className="rounded-md border border-input bg-background px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50"
+                    >
+                      {(Object.keys(LEVEL_LABELS) as SkillLevel[]).map((l) => (
+                        <option key={l} value={l}>
+                          {LEVEL_LABELS[l]}
+                        </option>
+                      ))}
+                    </select>
+                    <select
+                      value={confirmAreaId}
+                      onChange={(e) => setConfirmAreaId(e.target.value)}
+                      disabled={isPending}
+                      className="rounded-md border border-input bg-background px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50"
+                    >
+                      <option value="">Sin área</option>
+                      {areas.map((a) => (
+                        <option key={a.id} value={a.id}>
+                          {a.name}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={() => handleConfirmSuggestion(suggestion.term)}
+                      disabled={isPending}
+                      className="rounded-md bg-primary px-3 py-1 text-xs font-medium text-primary-foreground disabled:opacity-50"
+                    >
+                      {isPending ? 'Creando...' : 'Crear'}
+                    </button>
+                    <button
+                      onClick={() => setConfirmingTerm(null)}
+                      disabled={isPending}
+                      className="rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:bg-muted disabled:opacity-50"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Header actions */}
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">

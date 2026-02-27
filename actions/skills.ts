@@ -13,7 +13,10 @@ import { db, assertDatabaseUrl } from '@/lib/db/client'
 import { skills } from '@/lib/db/schema/skills'
 import { stepSkillTags } from '@/lib/db/schema/step-skill-tags'
 import { stepsActivities } from '@/lib/db/schema/steps-activities'
-import { eq, and } from 'drizzle-orm'
+import { timeEntries } from '@/lib/db/schema/time-entries'
+import { detectEmergingSkills } from '@/features/skills/detection'
+import type { EmergingSkillSuggestion } from '@/features/skills/detection'
+import { eq, and, gte, isNull, sql } from 'drizzle-orm'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -27,6 +30,8 @@ export interface CreateSkillData {
   name: string
   level?: 'beginner' | 'intermediate' | 'advanced' | 'expert'
   areaId?: string | null
+  /** Story 7.3 — true when created by the auto-detection engine */
+  autoDetected?: boolean
 }
 
 export interface UpdateSkillData {
@@ -68,7 +73,7 @@ export async function createSkill(data: CreateSkillData): Promise<SkillActionRes
         name: trimmedName,
         level: data.level ?? 'beginner',
         areaId: data.areaId ?? null,
-        autoDetected: false,
+        autoDetected: data.autoDetected ?? false,
       })
       .returning({ id: skills.id })
 
@@ -256,4 +261,74 @@ export async function removeSkillTag(
     console.error('[removeSkillTag] failed:', err)
     return { success: false, error: 'Error al eliminar el tag' }
   }
+}
+
+/**
+ * Analyzes the user's recent activities (last 90 days) and suggests emerging skills.
+ * Uses the `detectEmergingSkills` pure function for tokenization + threshold filtering.
+ * Story 7.3 — AC3.
+ */
+export async function suggestSkillFromActivities(): Promise<EmergingSkillSuggestion[]> {
+  try {
+    assertDatabaseUrl()
+    const userId = await getAuthenticatedUserId()
+    const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000)
+
+    // Get activities from the last 90 days with accumulated time
+    const rows = await db
+      .select({
+        title: stepsActivities.title,
+        totalSeconds: sql<number>`COALESCE(SUM(${timeEntries.durationSeconds}), 0)`,
+      })
+      .from(stepsActivities)
+      .leftJoin(timeEntries, eq(timeEntries.stepActivityId, stepsActivities.id))
+      .where(and(eq(stepsActivities.userId, userId), gte(stepsActivities.createdAt, ninetyDaysAgo)))
+      .groupBy(stepsActivities.id, stepsActivities.title)
+
+    // Get existing skill names to exclude from suggestions
+    const existingSkillRows = await db
+      .select({ name: skills.name })
+      .from(skills)
+      .where(and(eq(skills.userId, userId), isNull(skills.archivedAt)))
+
+    const activities = rows.map((r) => ({
+      title: r.title,
+      totalSeconds: Number(r.totalSeconds),
+    }))
+    const existingSkillNames = existingSkillRows.map((s) => s.name)
+
+    return detectEmergingSkills(activities, existingSkillNames)
+  } catch (err) {
+    console.error('[suggestSkillFromActivities] failed:', err)
+    return []
+  }
+}
+
+/**
+ * Confirms an emerging skill suggestion by creating the skill with autoDetected=true.
+ * Story 7.3 — AC4.
+ */
+export async function confirmEmergingSkill(
+  term: string,
+  level?: 'beginner' | 'intermediate' | 'advanced' | 'expert',
+  areaId?: string | null
+): Promise<SkillActionResult> {
+  return createSkill({
+    name: term,
+    level: level ?? 'beginner',
+    areaId: areaId ?? null,
+    autoDetected: true,
+  })
+}
+
+/**
+ * Dismisses an emerging skill suggestion.
+ * MVP: actual persistence handled client-side via localStorage.
+ * Returns success so the UI can update optimistically.
+ * Story 7.3 — AC5.
+ */
+export async function dismissEmergingSkill(term: string): Promise<SkillActionResult> {
+  if (!term?.trim()) return { success: false, error: 'Término inválido' }
+  // MVP: persistence via localStorage in SkillsClient
+  return { success: true }
 }
