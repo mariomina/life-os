@@ -7,6 +7,8 @@
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue)
 ![Next.js](https://img.shields.io/badge/Next.js-16-black)
 
+[🇪🇸 Versión en español](./README.es.md)
+
 ---
 
 ## What is life-os?
