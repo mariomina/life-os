@@ -2,6 +2,7 @@
 
 // actions/correlations.ts
 // Story 8.3 — Motor de correlaciones: runCorrelationEngine + getActiveCorrelations.
+// Story 8.4 — runAdvancedPatternDetection.
 
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { db } from '@/lib/db/client'
@@ -18,6 +19,11 @@ import {
   type MetricSeries,
 } from '@/features/correlations/engine'
 import type { Correlation } from '@/lib/db/schema/correlations'
+import {
+  detectDestructiveLoops,
+  detectLeveragePoints,
+  detectBottlenecks,
+} from '@/features/correlations/patterns'
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
@@ -234,4 +240,76 @@ export async function getActiveCorrelations(): Promise<CorrelationRow[]> {
     .orderBy(desc(sql`ABS(${correlations.correlationValue})`))
 
   return rows
+}
+// ─── Story 8.4: runAdvancedPatternDetection ───────────────────────────────────
+
+export interface PatternDetectionResult {
+  success: boolean
+  destructiveLoops: number
+  leveragePoints: number
+  bottlenecks: number
+  error?: string
+}
+
+/**
+ * Runs advanced pattern detection on the current active correlations.
+ * Updates the `type` field of matching correlations in the DB.
+ */
+export async function runAdvancedPatternDetection(): Promise<PatternDetectionResult> {
+  try {
+    const userId = await getAuthenticatedUserId()
+
+    const activeCorrs = await db
+      .select({
+        id: correlations.id,
+        entityAId: correlations.entityAId,
+        entityBId: correlations.entityBId,
+        entityAType: correlations.entityAType,
+        entityBType: correlations.entityBType,
+        type: correlations.type,
+        tier: correlations.tier,
+        correlationValue: correlations.correlationValue,
+      })
+      .from(correlations)
+      .where(and(eq(correlations.userId, userId), eq(correlations.isActive, true)))
+
+    const loops = detectDestructiveLoops(activeCorrs)
+    const leverage = detectLeveragePoints(activeCorrs)
+    const bottleneckItems = detectBottlenecks(activeCorrs)
+
+    // Update types in DB
+    for (const loop of loops) {
+      await db
+        .update(correlations)
+        .set({ type: 'destructive_loop' })
+        .where(and(eq(correlations.id, loop.id as string), eq(correlations.userId, userId)))
+    }
+    for (const lev of leverage) {
+      await db
+        .update(correlations)
+        .set({ type: 'leverage_point' })
+        .where(and(eq(correlations.id, lev.id as string), eq(correlations.userId, userId)))
+    }
+    for (const bn of bottleneckItems) {
+      await db
+        .update(correlations)
+        .set({ type: 'bottleneck' })
+        .where(and(eq(correlations.id, bn.id as string), eq(correlations.userId, userId)))
+    }
+
+    return {
+      success: true,
+      destructiveLoops: loops.length,
+      leveragePoints: leverage.length,
+      bottlenecks: bottleneckItems.length,
+    }
+  } catch (error) {
+    return {
+      success: false,
+      destructiveLoops: 0,
+      leveragePoints: 0,
+      bottlenecks: 0,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    }
+  }
 }
