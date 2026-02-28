@@ -31,12 +31,19 @@ Thumbs.db
 .idea/
 *.swp
 
-# AIOS Local (AIOS)
-.aios-core/local/
-.claude/settings.local.json
-.aios/install-log.txt
-.aios/environment-report.json
-.aios/project-status.yaml
+# AIOS Framework & IDE Agents (local only, not part of the app)
+.aios-core/
+.aios/
+.claude/
+.codex/
+.gemini/
+
+# Development artifacts (AIOS stories, QA gates)
+docs/stories/
+docs/qa/
+
+# Temporary scripts
+scripts/
 
 # MCP & Integrations
 .mcp.json
