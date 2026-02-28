@@ -4,6 +4,7 @@
 // Story 8.1 — Time by Area + Time by Project con selector de período.
 // Story 8.2 — Habit Consistency + CCR + OKR Progress + Area Health Trend.
 // Story 8.6 — Insights IA (ILLMProvider).
+// Story 8.7 — Agent Leverage Report.
 
 import { useState, useTransition } from 'react'
 import {
@@ -12,11 +13,13 @@ import {
   getHabitConsistencyReport,
   getCalendarCommitmentRate,
   generateReportInsights,
+  getAgentLeverageReport,
   type TimeByAreaRow,
   type TimeByProjectRow,
   type OkrProgressItem,
   type AreaHealthTrendRow,
   type InsightsResult,
+  type AgentLeverageReport,
 } from '@/actions/reports'
 import type { ReportPeriod } from '@/features/reports/periods'
 import type { HabitConsistencyItem, CCRResult } from '@/features/reports/metrics'
@@ -310,6 +313,109 @@ function InsightsSection({ initialInsights, period }: InsightsSectionProps) {
   )
 }
 
+// ─── Agent Leverage Section (Story 8.7) ──────────────────────────────────────
+
+function AgentLeverageSection({ report }: { report: AgentLeverageReport }) {
+  const { metrics, roiByType, sufficientData, insufficientDataMessage } = report
+
+  return (
+    <div className="space-y-4">
+      {!sufficientData && (
+        <div className="rounded-md bg-blue-50 border border-blue-200 p-3 text-xs text-blue-800">
+          {insufficientDataMessage}
+        </div>
+      )}
+
+      {metrics.totalActivities === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          No hay actividades ejecutadas por IA en este período.
+        </p>
+      ) : (
+        <>
+          {/* Main metric */}
+          <div className="space-y-1">
+            <p className="text-3xl font-bold">{metrics.aiPercentage}%</p>
+            <p className="text-xs text-muted-foreground">ejecutado por IA</p>
+          </div>
+
+          {/* IA/Human/Mixed bar */}
+          <div className="space-y-1">
+            <div className="flex h-3 rounded-full overflow-hidden bg-muted">
+              {metrics.aiActivities > 0 && (
+                <div
+                  className="h-full bg-purple-500"
+                  style={{ width: `${(metrics.aiActivities / metrics.totalActivities) * 100}%` }}
+                />
+              )}
+              {metrics.humanActivities > 0 && (
+                <div
+                  className="h-full bg-blue-400"
+                  style={{ width: `${(metrics.humanActivities / metrics.totalActivities) * 100}%` }}
+                />
+              )}
+              {metrics.mixedActivities > 0 && (
+                <div
+                  className="h-full bg-emerald-400"
+                  style={{ width: `${(metrics.mixedActivities / metrics.totalActivities) * 100}%` }}
+                />
+              )}
+            </div>
+            <div className="flex gap-3 text-xs text-muted-foreground">
+              <span className="flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-purple-500 inline-block" />
+                IA ({metrics.aiActivities})
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-blue-400 inline-block" />
+                Humano ({metrics.humanActivities})
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block" />
+                Mixto ({metrics.mixedActivities})
+              </span>
+            </div>
+          </div>
+
+          {/* Accuracy + hours */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded-md bg-muted p-3">
+              <p className="text-lg font-semibold tabular-nums">
+                {Math.round(metrics.aiAccuracyRate * 100)}%
+              </p>
+              <p className="text-xs text-muted-foreground">accuracy IA</p>
+            </div>
+            <div className="rounded-md bg-muted p-3">
+              <p className="text-lg font-semibold tabular-nums">
+                ~{metrics.estimatedHumanHoursSaved}h
+              </p>
+              <p className="text-xs text-muted-foreground">horas ahorradas</p>
+            </div>
+          </div>
+
+          {/* ROI table */}
+          {roiByType.length > 0 && (
+            <div className="space-y-1">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                ROI por tipo
+              </p>
+              <div className="divide-y rounded-md border text-sm overflow-hidden">
+                {roiByType.map((row) => (
+                  <div key={row.executorType} className="flex justify-between px-3 py-2">
+                    <span className="capitalize">{row.executorType}</span>
+                    <span className="text-muted-foreground tabular-nums">
+                      {row.count} actividades · {row.totalMinutes}min total
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 interface ReportsClientProps {
@@ -320,6 +426,7 @@ interface ReportsClientProps {
   initialOkrProgress: OkrProgressItem[]
   initialAreaHealthTrends: AreaHealthTrendRow[]
   initialInsights: InsightsResult | null
+  initialLeverage: AgentLeverageReport
   initialPeriod: ReportPeriod
 }
 
@@ -331,6 +438,7 @@ export function ReportsClient({
   initialOkrProgress,
   initialAreaHealthTrends,
   initialInsights,
+  initialLeverage,
   initialPeriod,
 }: ReportsClientProps) {
   const [period, setPeriod] = useState<ReportPeriod>(initialPeriod)
@@ -340,21 +448,24 @@ export function ReportsClient({
   const [ccr, setCcr] = useState(initialCCR)
   const [okrProgress] = useState(initialOkrProgress)
   const [areaHealthTrends] = useState(initialAreaHealthTrends)
+  const [leverage, setLeverage] = useState(initialLeverage)
   const [isPending, startTransition] = useTransition()
 
   function handlePeriodChange(newPeriod: ReportPeriod) {
     setPeriod(newPeriod)
     startTransition(async () => {
-      const [area, project, habits, newCcr] = await Promise.all([
+      const [area, project, habits, newCcr, newLeverage] = await Promise.all([
         getTimeByArea(newPeriod),
         getTimeByProject(newPeriod),
         getHabitConsistencyReport(newPeriod),
         getCalendarCommitmentRate(newPeriod),
+        getAgentLeverageReport(newPeriod),
       ])
       setTimeByArea(area)
       setTimeByProject(project)
       setHabitConsistency(habits)
       setCcr(newCcr)
+      setLeverage(newLeverage)
     })
   }
 
@@ -385,6 +496,12 @@ export function ReportsClient({
 
       {/* ── Insights IA (Story 8.6) ── */}
       <InsightsSection initialInsights={initialInsights} period={period} />
+
+      {/* ── Agent Leverage (Story 8.7) ── */}
+      <section className="rounded-lg border p-4 space-y-3">
+        <h2 className="text-base font-semibold">Agent Leverage</h2>
+        <AgentLeverageSection report={leverage} />
+      </section>
 
       {/* ── Métricas (Story 8.2) ── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">

@@ -19,7 +19,7 @@ import { habits } from '@/lib/db/schema/habits'
 import { areaScores } from '@/lib/db/schema/area-scores'
 import { okrs } from '@/lib/db/schema/okrs'
 import { correlations } from '@/lib/db/schema/correlations'
-import { eq, and, gte, lte, isNotNull, isNull, sql, desc, avg, count } from 'drizzle-orm'
+import { eq, and, gte, lte, isNotNull, isNull, sql, desc, asc, avg, count } from 'drizzle-orm'
 import { getPeriodRange, type ReportPeriod } from '@/features/reports/periods'
 import {
   computeHabitConsistency,
@@ -28,6 +28,12 @@ import {
 } from '@/features/reports/metrics'
 import { buildInsightPrompt, type CorrelationSummary } from '@/features/reports/insights'
 import { getLLMProvider } from '@/lib/llm/factory'
+import {
+  computeLeverageMetrics,
+  computeROIByExecutorType,
+  type LeverageMetrics,
+  type ROIByExecutorRow,
+} from '@/features/reports/leverage'
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
@@ -407,5 +413,66 @@ export async function generateReportInsights(
     const okrLabel = `${Math.round(okrProgressAvg)}%`
     const fallback = `Tu CCR esta ${periodLabels[period]} fue ${ccrLabel}. Mantuviste una consistencia de hábitos del ${consistencyLabel}. El progreso promedio en OKRs es ${okrLabel}. No hay correlaciones con datos suficientes aún.`
     return { insights: fallback, generatedAt: new Date(), provider: 'fallback' }
+  }
+}
+
+// ─── Story 8.7: Agent Leverage Report ────────────────────────────────────────
+
+export interface AgentLeverageReport {
+  metrics: LeverageMetrics
+  roiByType: ROIByExecutorRow[]
+  sufficientData: boolean
+  insufficientDataMessage?: string
+}
+
+/**
+ * Returns agent leverage metrics + ROI by executor type for the given period.
+ * sufficientData=false when the user has fewer than 14 days of activities.
+ */
+export async function getAgentLeverageReport(period: ReportPeriod): Promise<AgentLeverageReport> {
+  const userId = await getAuthenticatedUserId()
+  const { from, to } = getPeriodRange(period)
+
+  const [activities, firstActivity] = await Promise.all([
+    db
+      .select({
+        executorType: stepsActivities.executorType,
+        status: stepsActivities.status,
+        scheduledDurationMinutes: stepsActivities.scheduledDurationMinutes,
+      })
+      .from(stepsActivities)
+      .where(
+        and(
+          eq(stepsActivities.userId, userId),
+          gte(stepsActivities.scheduledAt, from),
+          lte(stepsActivities.scheduledAt, to)
+        )
+      ),
+    db
+      .select({ createdAt: stepsActivities.createdAt })
+      .from(stepsActivities)
+      .where(eq(stepsActivities.userId, userId))
+      .orderBy(asc(stepsActivities.createdAt))
+      .limit(1),
+  ])
+
+  // AC4: Check sufficient data (≥ 14 days)
+  const sufficientData =
+    firstActivity.length > 0 &&
+    Math.floor((Date.now() - firstActivity[0].createdAt.getTime()) / 86400000) >= 14
+
+  const typedActivities = activities.map((a) => ({
+    executorType: (a.executorType ?? 'human') as 'human' | 'ai' | 'mixed',
+    status: a.status,
+    scheduledDurationMinutes: a.scheduledDurationMinutes,
+  }))
+
+  return {
+    metrics: computeLeverageMetrics(typedActivities),
+    roiByType: computeROIByExecutorType(typedActivities),
+    sufficientData,
+    insufficientDataMessage: sufficientData
+      ? undefined
+      : 'Se necesitan al menos 14 días de datos para el reporte de apalancamiento.',
   }
 }

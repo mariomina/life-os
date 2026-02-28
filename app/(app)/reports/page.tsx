@@ -8,6 +8,7 @@ import {
   getOkrProgressReport,
   getAreaHealthTrends,
   generateReportInsights,
+  getAgentLeverageReport,
 } from '@/actions/reports'
 import { ReportsClient } from './_components/ReportsClient'
 
@@ -16,6 +17,7 @@ import { ReportsClient } from './_components/ReportsClient'
  * Story 8.1 — Time by Area + Time by Project.
  * Story 8.2 — Habit Consistency + CCR + OKR Progress + Area Health Trend.
  * Story 8.6 — Insights IA via ILLMProvider.
+ * Story 8.7 — Agent Leverage Report.
  */
 export default async function ReportsPage() {
   const supabase = await createSupabaseServerClient()
@@ -36,6 +38,7 @@ export default async function ReportsPage() {
     okrProgress,
     areaHealthTrends,
     insights,
+    leverage,
   ] = await Promise.all([
     getTimeByArea('week'),
     getTimeByProject('week'),
@@ -44,6 +47,7 @@ export default async function ReportsPage() {
     getOkrProgressReport(),
     getAreaHealthTrends(),
     generateReportInsights('week').catch(() => null),
+    getAgentLeverageReport('week'),
   ])
 
   return (
@@ -55,6 +59,7 @@ export default async function ReportsPage() {
       initialOkrProgress={okrProgress}
       initialAreaHealthTrends={areaHealthTrends}
       initialInsights={insights}
+      initialLeverage={leverage}
       initialPeriod="week"
     />
   )
