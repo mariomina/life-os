@@ -407,3 +407,80 @@ export async function createSpontaneousActivity(data: {
     return { error: message }
   }
 }
+
+// ─── Story 8.5: Unconscious Habit Detection ───────────────────────────────────
+
+import { detectUnconsciousHabits } from '@/features/habits/unconscious-detection'
+export type { UnconsciousHabitSuggestion } from '@/features/habits/unconscious-detection'
+
+/**
+ * Detects unconscious habits from the user's activities in the last 90 days.
+ */
+export async function detectUnconsciousHabitsFromActivities() {
+  const supabase = await createSupabaseServerClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) throw new Error('UNAUTHENTICATED')
+
+  const ninetyDaysAgo = new Date()
+  ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90)
+
+  const [activitiesResult, habitsResult] = await Promise.all([
+    db
+      .select({ title: stepsActivities.title, scheduledAt: stepsActivities.scheduledAt })
+      .from(stepsActivities)
+      .where(
+        and(eq(stepsActivities.userId, user.id), gte(stepsActivities.scheduledAt, ninetyDaysAgo))
+      ),
+    db
+      .select({ title: habits.title })
+      .from(habits)
+      .where(and(eq(habits.userId, user.id), eq(habits.isActive, true))),
+  ])
+
+  return detectUnconsciousHabits(
+    activitiesResult,
+    habitsResult.map((h) => h.title)
+  )
+}
+
+/**
+ * Creates a habit from a detected unconscious pattern.
+ */
+export async function createHabitFromPattern(
+  term: string,
+  areaId?: string
+): Promise<{ success: boolean; habitId?: string; error?: string }> {
+  try {
+    const supabase = await createSupabaseServerClient()
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+    if (!user) return { success: false, error: 'UNAUTHENTICATED' }
+
+    const [newHabit] = await db
+      .insert(habits)
+      .values({
+        userId: user.id,
+        areaId: areaId ?? null,
+        title: term.charAt(0).toUpperCase() + term.slice(1),
+        rrule: 'FREQ=WEEKLY',
+        durationMinutes: 30,
+      })
+      .returning({ id: habits.id })
+
+    revalidatePath('/habits')
+    return { success: true, habitId: newHabit.id }
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : 'Error desconocido' }
+  }
+}
+
+/**
+ * Dismisses a habit suggestion (client-side localStorage — no DB persistence in MVP).
+ * This is a no-op server action; dismissal is handled client-side.
+ */
+export async function dismissUnconsciousHabit(_term: string): Promise<{ success: boolean }> {
+  return { success: true }
+}
