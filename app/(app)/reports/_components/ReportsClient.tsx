@@ -3,6 +3,7 @@
 // app/(app)/reports/_components/ReportsClient.tsx
 // Story 8.1 — Time by Area + Time by Project con selector de período.
 // Story 8.2 — Habit Consistency + CCR + OKR Progress + Area Health Trend.
+// Story 8.6 — Insights IA (ILLMProvider).
 
 import { useState, useTransition } from 'react'
 import {
@@ -10,10 +11,12 @@ import {
   getTimeByProject,
   getHabitConsistencyReport,
   getCalendarCommitmentRate,
+  generateReportInsights,
   type TimeByAreaRow,
   type TimeByProjectRow,
   type OkrProgressItem,
   type AreaHealthTrendRow,
+  type InsightsResult,
 } from '@/actions/reports'
 import type { ReportPeriod } from '@/features/reports/periods'
 import type { HabitConsistencyItem, CCRResult } from '@/features/reports/metrics'
@@ -30,6 +33,15 @@ function formatSeconds(seconds: number): string {
 
 function formatRate(rate: number): string {
   return `${Math.round(rate * 100)}%`
+}
+
+function formatRelativeTime(date: Date): string {
+  const diffMs = Date.now() - new Date(date).getTime()
+  const diffMin = Math.floor(diffMs / 60000)
+  if (diffMin < 1) return 'ahora mismo'
+  if (diffMin < 60) return `hace ${diffMin} min`
+  const diffH = Math.floor(diffMin / 60)
+  return `hace ${diffH}h`
 }
 
 // ─── Period Selector ──────────────────────────────────────────────────────────
@@ -235,6 +247,69 @@ function AreaHealthSection({ items }: { items: AreaHealthTrendRow[] }) {
   )
 }
 
+// ─── Insights IA Section (Story 8.6) ─────────────────────────────────────────
+
+interface InsightsSectionProps {
+  initialInsights: InsightsResult | null
+  period: ReportPeriod
+}
+
+function InsightsSection({ initialInsights, period }: InsightsSectionProps) {
+  const [insights, setInsights] = useState<InsightsResult | null>(initialInsights)
+  const [isGenerating, startGenerating] = useTransition()
+
+  function handleRegenerate() {
+    startGenerating(async () => {
+      const result = await generateReportInsights(period)
+      setInsights(result)
+    })
+  }
+
+  // Show info banner when using mock provider (env var is public, available client-side)
+  const usingMock = (process.env.NEXT_PUBLIC_LLM_PROVIDER ?? 'mock') === 'mock'
+
+  return (
+    <section className="rounded-lg border p-4 space-y-3">
+      <div className="flex items-center justify-between">
+        <h2 className="text-base font-semibold">Insights IA</h2>
+        <button
+          onClick={handleRegenerate}
+          disabled={isGenerating}
+          className="text-xs px-3 py-1 rounded-full bg-muted hover:bg-muted/80 transition-colors disabled:opacity-50"
+        >
+          {isGenerating ? 'Generando...' : 'Regenerar'}
+        </button>
+      </div>
+
+      {usingMock && (
+        <div className="rounded-md bg-amber-50 border border-amber-200 p-3 text-xs text-amber-800">
+          Configura <code>ANTHROPIC_API_KEY</code> y <code>NEXT_PUBLIC_LLM_PROVIDER=claude</code>{' '}
+          para activar insights con IA real.
+        </div>
+      )}
+
+      {isGenerating ? (
+        <div className="space-y-2 animate-pulse">
+          <div className="h-3 bg-muted rounded w-3/4" />
+          <div className="h-3 bg-muted rounded w-full" />
+          <div className="h-3 bg-muted rounded w-5/6" />
+        </div>
+      ) : insights ? (
+        <div className="space-y-2">
+          <p className="text-sm whitespace-pre-wrap leading-relaxed">{insights.insights}</p>
+          <p className="text-xs text-muted-foreground">
+            Generado {formatRelativeTime(insights.generatedAt)} · {insights.provider}
+          </p>
+        </div>
+      ) : (
+        <p className="text-sm text-muted-foreground">
+          Haz clic en &quot;Regenerar&quot; para generar insights de tus datos.
+        </p>
+      )}
+    </section>
+  )
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 interface ReportsClientProps {
@@ -244,6 +319,7 @@ interface ReportsClientProps {
   initialCCR: CCRResult
   initialOkrProgress: OkrProgressItem[]
   initialAreaHealthTrends: AreaHealthTrendRow[]
+  initialInsights: InsightsResult | null
   initialPeriod: ReportPeriod
 }
 
@@ -254,6 +330,7 @@ export function ReportsClient({
   initialCCR,
   initialOkrProgress,
   initialAreaHealthTrends,
+  initialInsights,
   initialPeriod,
 }: ReportsClientProps) {
   const [period, setPeriod] = useState<ReportPeriod>(initialPeriod)
@@ -305,6 +382,9 @@ export function ReportsClient({
 
       {/* Loading overlay */}
       {isPending && <p className="text-sm text-muted-foreground animate-pulse">Actualizando...</p>}
+
+      {/* ── Insights IA (Story 8.6) ── */}
+      <InsightsSection initialInsights={initialInsights} period={period} />
 
       {/* ── Métricas (Story 8.2) ── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">

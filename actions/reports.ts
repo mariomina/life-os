@@ -18,6 +18,7 @@ import { projects } from '@/lib/db/schema/projects'
 import { habits } from '@/lib/db/schema/habits'
 import { areaScores } from '@/lib/db/schema/area-scores'
 import { okrs } from '@/lib/db/schema/okrs'
+import { correlations } from '@/lib/db/schema/correlations'
 import { eq, and, gte, lte, isNotNull, isNull, sql, desc, avg, count } from 'drizzle-orm'
 import { getPeriodRange, type ReportPeriod } from '@/features/reports/periods'
 import {
@@ -25,6 +26,8 @@ import {
   computeCCR,
   computeAreaHealthTrend,
 } from '@/features/reports/metrics'
+import { buildInsightPrompt, type CorrelationSummary } from '@/features/reports/insights'
+import { getLLMProvider } from '@/lib/llm/factory'
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
@@ -317,4 +320,92 @@ export async function getAreaHealthTrends(): Promise<AreaHealthTrendRow[]> {
       trend: computeAreaHealthTrend(currentScore, previousScore),
     }
   })
+}
+
+// ─── Story 8.6: Generate LLM Insights ────────────────────────────────────────
+
+export interface InsightsResult {
+  insights: string
+  generatedAt: Date
+  provider: string
+}
+
+/**
+ * Generates natural-language insights using an LLM.
+ * Graceful fallback: on any error, returns a static summary based on raw numbers.
+ */
+export async function generateReportInsights(
+  period: ReportPeriod = 'week'
+): Promise<InsightsResult> {
+  const userId = await getAuthenticatedUserId()
+
+  // Gather data in parallel
+  const [ccrData, habitData, okrData, correlationRows] = await Promise.all([
+    getCalendarCommitmentRate(period),
+    getHabitConsistencyReport(period),
+    getOkrProgressReport(),
+    db
+      .select({
+        entityAType: correlations.entityAType,
+        entityBType: correlations.entityBType,
+        entityAId: correlations.entityAId,
+        entityBId: correlations.entityBId,
+        type: correlations.type,
+        tier: correlations.tier,
+        correlationValue: correlations.correlationValue,
+      })
+      .from(correlations)
+      .where(
+        and(
+          eq(correlations.userId, userId),
+          eq(correlations.isActive, true),
+          eq(correlations.tier, 'full')
+        )
+      )
+      .orderBy(desc(sql`ABS(${correlations.correlationValue})`))
+      .limit(10),
+  ])
+
+  const habitConsistencyAvg =
+    habitData.length > 0 ? habitData.reduce((s, h) => s + h.rate, 0) / habitData.length : 0
+  const okrProgressAvg =
+    okrData.length > 0 ? okrData.reduce((s, o) => s + o.avgProgress, 0) / okrData.length : 0
+
+  const periodLabels: Record<ReportPeriod, string> = {
+    week: 'última semana',
+    month: 'último mes',
+    quarter: 'último trimestre',
+  }
+
+  const summary = {
+    ccrRate: ccrData.rate,
+    habitConsistencyAvg,
+    okrProgressAvg,
+    periodLabel: periodLabels[period],
+  }
+
+  const correlationSummaries: CorrelationSummary[] = correlationRows.map((c) => ({
+    entityAType: c.entityAType,
+    entityAName: c.entityAId ?? '',
+    entityBType: c.entityBType,
+    entityBName: c.entityBId ?? '',
+    type: c.type,
+    tier: c.tier,
+    coefficient: Number(c.correlationValue ?? 0),
+  }))
+
+  const prompt = buildInsightPrompt(summary, correlationSummaries)
+
+  try {
+    const llm = getLLMProvider()
+    const insights = await llm.generateInsight(prompt)
+    return { insights, generatedAt: new Date(), provider: llm.providerName }
+  } catch {
+    // AC4: Graceful fallback
+    const ccrLabel = ccrData.rate !== null ? `${Math.round(ccrData.rate * 100)}%` : 'no disponible'
+    const consistencyLabel = `${Math.round(habitConsistencyAvg * 100)}%`
+    const okrLabel = `${Math.round(okrProgressAvg)}%`
+    const fallback = `Tu CCR esta ${periodLabels[period]} fue ${ccrLabel}. Mantuviste una consistencia de hábitos del ${consistencyLabel}. El progreso promedio en OKRs es ${okrLabel}. No hay correlaciones con datos suficientes aún.`
+    return { insights: fallback, generatedAt: new Date(), provider: 'fallback' }
+  }
 }
