@@ -1,170 +1,170 @@
 # life-os
 
-> AI-powered personal life management system — OKRs, habits, time tracking, inbox scheduling & weekly review
+> Sistema personal de gestión de vida con IA — OKRs, hábitos, seguimiento de tiempo, agenda inteligente y revisión semanal
 
 ![CI](https://github.com/mariomina/life-os/actions/workflows/ci.yml/badge.svg)
-![Tests](https://img.shields.io/badge/tests-678%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-678%20pasando-brightgreen)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue)
 ![Next.js](https://img.shields.io/badge/Next.js-16-black)
 
-[🇪🇸 Versión en español](./README.es.md)
+[🇺🇸 English version](./README.en.md)
 
 ---
 
-## What is life-os?
+## ¿Qué es life-os?
 
-**life-os** is a full-stack personal productivity system that integrates AI to help you manage your life with clarity and intention. It connects your long-term goals (OKRs) to your daily habits, tracks time across projects and areas, processes your inbox intelligently, and delivers weekly reviews with AI-generated insights — all in a single, unified interface.
+**life-os** es un sistema de productividad personal full-stack que integra inteligencia artificial para ayudarte a gestionar tu vida con claridad e intención. Conecta tus objetivos a largo plazo (OKRs) con tus hábitos diarios, rastrea el tiempo invertido en proyectos y áreas, procesa tu inbox de forma inteligente y entrega revisiones semanales con insights generados por IA — todo en una interfaz unificada.
 
-Built for the individual who wants to operate with the rigor of a high-performance team, but applied to their own life.
-
----
-
-## Features
-
-| Module                    | Description                                                                                                                                                         |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Areas of Life**         | Define the domains of your life (Health, Career, Finance, etc.) and track their health scores using the Maslow scoring model                                        |
-| **OKRs**                  | Set quarterly Objectives and Key Results linked to your areas — track progress with CCR (Completion-to-Commitment Ratio)                                            |
-| **Habits**                | Daily habit tracking with consistency metrics, streak counts, and correlation analysis                                                                              |
-| **Projects**              | Manage projects with tasks and steps, linked to areas and OKRs                                                                                                      |
-| **Calendar & Scheduling** | Schedule activities with AI-assisted slot recommendations based on your energy patterns                                                                             |
-| **Inbox**                 | Capture anything — AI classifies inbox items and routes them to the right module                                                                                    |
-| **Skills**                | Track skill development with level progression, XP points, and emerging skill detection                                                                             |
-| **Reports & Insights**    | Weekly and periodic reports with natural language AI insights powered by Claude — habit consistency, OKR progress, correlation analysis, and agent leverage metrics |
-| **Weekly Review**         | Guided 4-phase wizard (Measure → Analyze → Plan → Confirm) for structured weekly reflection                                                                         |
+Diseñado para quien quiere operar con el rigor de un equipo de alto rendimiento, pero aplicado a su propia vida.
 
 ---
 
-## Tech Stack
+## Funcionalidades
 
-| Layer         | Technology                                                                                                         |
-| ------------- | ------------------------------------------------------------------------------------------------------------------ |
-| **Framework** | [Next.js 16](https://nextjs.org/) (App Router, Server Actions, RSC)                                                |
-| **UI**        | [React 19](https://react.dev/) + [Tailwind CSS v4](https://tailwindcss.com/) + [shadcn/ui](https://ui.shadcn.com/) |
-| **Database**  | [Supabase](https://supabase.com/) (PostgreSQL) + [Drizzle ORM](https://orm.drizzle.team/)                          |
-| **Auth**      | [Supabase Auth](https://supabase.com/docs/guides/auth) (server-side, SSR)                                          |
-| **AI**        | [Anthropic Claude](https://www.anthropic.com/) via `@anthropic-ai/sdk` (insights + inbox classification)           |
-| **Language**  | [TypeScript 5](https://www.typescriptlang.org/) (strict mode)                                                      |
-| **Testing**   | [Vitest](https://vitest.dev/) — 678 tests                                                                          |
-| **Deploy**    | [Vercel](https://vercel.com/)                                                                                      |
+| Módulo                  | Descripción                                                                                                                                                                                         |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Áreas de Vida**       | Define los dominios de tu vida (Salud, Carrera, Finanzas, etc.) y monitorea su salud con el modelo de puntuación Maslow                                                                             |
+| **OKRs**                | Define Objetivos y Resultados Clave trimestrales vinculados a tus áreas — sigue el progreso con CCR (Completion-to-Commitment Ratio)                                                                |
+| **Hábitos**             | Seguimiento diario de hábitos con métricas de consistencia, rachas y análisis de correlaciones                                                                                                      |
+| **Proyectos**           | Gestiona proyectos con tareas y pasos vinculados a áreas y OKRs                                                                                                                                     |
+| **Calendario y Agenda** | Programa actividades con sugerencias de horarios asistidas por IA según tus patrones de energía                                                                                                     |
+| **Inbox**               | Captura cualquier cosa — la IA clasifica los items y los redirige al módulo correcto                                                                                                                |
+| **Habilidades**         | Rastrea el desarrollo de habilidades con niveles de progresión, puntos XP y detección de habilidades emergentes                                                                                     |
+| **Informes e Insights** | Reportes semanales y periódicos con insights en lenguaje natural generados por Claude — consistencia de hábitos, progreso OKR, análisis de correlaciones y métricas de apalancamiento de agentes IA |
+| **Revisión Semanal**    | Wizard guiado de 4 fases (Medir → Analizar → Planificar → Confirmar) para reflexión semanal estructurada                                                                                            |
 
 ---
 
-## Architecture
+## Stack Tecnológico
+
+| Capa              | Tecnología                                                                                                         |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------ |
+| **Framework**     | [Next.js 16](https://nextjs.org/) (App Router, Server Actions, RSC)                                                |
+| **UI**            | [React 19](https://react.dev/) + [Tailwind CSS v4](https://tailwindcss.com/) + [shadcn/ui](https://ui.shadcn.com/) |
+| **Base de datos** | [Supabase](https://supabase.com/) (PostgreSQL) + [Drizzle ORM](https://orm.drizzle.team/)                          |
+| **Autenticación** | [Supabase Auth](https://supabase.com/docs/guides/auth) (server-side, SSR)                                          |
+| **IA**            | [Anthropic Claude](https://www.anthropic.com/) via `@anthropic-ai/sdk` (insights + clasificación de inbox)         |
+| **Lenguaje**      | [TypeScript 5](https://www.typescriptlang.org/) (modo estricto)                                                    |
+| **Testing**       | [Vitest](https://vitest.dev/) — 678 tests                                                                          |
+| **Deploy**        | [Vercel](https://vercel.com/)                                                                                      |
+
+---
+
+## Arquitectura
 
 ```
-app/                    Next.js App Router (pages, layouts, API routes)
-├── (app)/              Authenticated routes
-│   ├── dashboard/      Main dashboard with area health overview
-│   ├── areas/          Areas of life management
-│   ├── okrs/           OKR tracking
-│   ├── habits/         Habit tracker
-│   ├── projects/       Project & task management
-│   ├── calendar/       Scheduling & calendar view
-│   ├── inbox/          Inbox capture & processing
-│   ├── skills/         Skill progression
-│   ├── reports/        Analytics & AI insights
-│   └── weekly-review/  Guided weekly review wizard
-├── (auth)/             Auth pages (login, signup)
-actions/                Next.js Server Actions (business logic layer)
-features/               Pure business logic (domain functions + tests)
-├── maslow/             Area health scoring (Maslow model)
-├── reports/            Report computations (habits, OKRs, correlations, leverage)
-├── correlations/       Statistical correlation engine
-└── skills/             Skill level + emerging skill detection
+app/                    Next.js App Router (páginas, layouts, rutas API)
+├── (app)/              Rutas autenticadas
+│   ├── dashboard/      Dashboard principal con resumen de salud por área
+│   ├── areas/          Gestión de áreas de vida
+│   ├── okrs/           Seguimiento de OKRs
+│   ├── habits/         Tracker de hábitos
+│   ├── projects/       Gestión de proyectos y tareas
+│   ├── calendar/       Vista de calendario y agenda
+│   ├── inbox/          Captura y procesamiento del inbox
+│   ├── skills/         Progresión de habilidades
+│   ├── reports/        Analítica e insights con IA
+│   └── weekly-review/  Wizard de revisión semanal guiado
+├── (auth)/             Páginas de autenticación (login, registro)
+actions/                Server Actions de Next.js (capa de lógica de negocio)
+features/               Lógica de negocio pura (funciones de dominio + tests)
+├── maslow/             Puntuación de salud de áreas (modelo Maslow)
+├── reports/            Cálculos de informes (hábitos, OKRs, correlaciones, leverage)
+├── correlations/       Motor de correlaciones estadísticas
+└── skills/             Nivel de habilidades + detección emergente
 lib/
 ├── db/                 Drizzle ORM schema + queries
-├── supabase/           Supabase client (server + browser)
-└── llm/                LLM provider abstraction (ILLMProvider + ClaudeProvider)
-components/             Shared React components (shadcn/ui + custom)
-types/                  TypeScript type definitions
-supabase/               Database migrations
+├── supabase/           Cliente Supabase (server + browser)
+└── llm/                Abstracción de proveedor LLM (ILLMProvider + ClaudeProvider)
+components/             Componentes React compartidos (shadcn/ui + custom)
+types/                  Definiciones de tipos TypeScript
+supabase/               Migraciones de base de datos
 docs/
-├── prd.md              Product Requirements Document
-├── architecture.md     Architecture overview
-├── prd/                PRD sections by epic
-└── architecture/       Architecture decision records
+├── prd.md              Documento de Requisitos del Producto
+├── architecture.md     Visión general de arquitectura
+├── prd/                Secciones del PRD por épica
+└── architecture/       Registros de decisiones de arquitectura
 ```
 
 ---
 
-## Quick Start
+## Inicio Rápido
 
-### Prerequisites
+### Prerrequisitos
 
 - Node.js 18+
-- A [Supabase](https://supabase.com/) project
-- (Optional) An [Anthropic API key](https://console.anthropic.com/) for AI features
+- Un proyecto en [Supabase](https://supabase.com/)
+- (Opcional) Una [API key de Anthropic](https://console.anthropic.com/) para funciones de IA
 
-### Setup
+### Configuración
 
 ```bash
-# 1. Clone the repository
+# 1. Clonar el repositorio
 git clone https://github.com/mariomina/life-os.git
 cd life-os
 
-# 2. Install dependencies
+# 2. Instalar dependencias
 npm install
 
-# 3. Configure environment variables
+# 3. Configurar variables de entorno
 cp .env.example .env.local
-# Edit .env.local with your Supabase credentials
+# Edita .env.local con tus credenciales de Supabase
 
-# 4. Apply database migrations
+# 4. Aplicar migraciones de base de datos
 npx supabase db push
 
-# 5. Start the development server
+# 5. Iniciar el servidor de desarrollo
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) to see the app.
+Abre [http://localhost:3000](http://localhost:3000) para ver la app.
 
 ---
 
-## Environment Variables
+## Variables de Entorno
 
-| Variable                        | Required | Description                                                       |
-| ------------------------------- | -------- | ----------------------------------------------------------------- |
-| `NEXT_PUBLIC_SUPABASE_URL`      | Yes      | Your Supabase project URL                                         |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Yes      | Supabase anonymous (public) key                                   |
-| `SUPABASE_SERVICE_ROLE_KEY`     | Yes      | Supabase service role key (server-side only)                      |
-| `ANTHROPIC_API_KEY`             | No       | Anthropic API key for AI insights (falls back to static messages) |
-| `NEXT_PUBLIC_LLM_PROVIDER`      | No       | LLM provider: `claude` or `mock` (default: `mock`)                |
+| Variable                        | Requerida | Descripción                                                                           |
+| ------------------------------- | --------- | ------------------------------------------------------------------------------------- |
+| `NEXT_PUBLIC_SUPABASE_URL`      | Sí        | URL de tu proyecto Supabase                                                           |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Sí        | Clave anónima (pública) de Supabase                                                   |
+| `SUPABASE_SERVICE_ROLE_KEY`     | Sí        | Clave de rol de servicio (solo server-side)                                           |
+| `ANTHROPIC_API_KEY`             | No        | API key de Anthropic para insights IA (usa mensajes estáticos si no está configurada) |
+| `NEXT_PUBLIC_LLM_PROVIDER`      | No        | Proveedor LLM: `claude` o `mock` (por defecto: `mock`)                                |
 
 ---
 
 ## Testing
 
 ```bash
-# Run all tests
+# Ejecutar todos los tests
 npm test
 
-# Run tests in watch mode
+# Tests en modo watch
 npm run test:watch
 
-# Type checking
+# Verificación de tipos
 npm run typecheck
 
 # Linting
 npm run lint
 ```
 
-The project has **678 tests** covering all business logic functions, edge cases, and domain computations.
+El proyecto cuenta con **678 tests** que cubren toda la lógica de negocio, casos borde y cálculos de dominio.
 
 ---
 
 ## Deploy
 
-### Vercel (recommended)
+### Vercel (recomendado)
 
-1. Push to GitHub
-2. Import the repository in [Vercel](https://vercel.com/new)
-3. Add environment variables in the Vercel dashboard
-4. Deploy
+1. Haz push a GitHub
+2. Importa el repositorio en [Vercel](https://vercel.com/new)
+3. Añade las variables de entorno en el dashboard de Vercel
+4. Despliega
 
-### Database
+### Base de datos
 
-Run Supabase migrations against your production database:
+Ejecuta las migraciones de Supabase contra tu base de datos de producción:
 
 ```bash
 npx supabase db push --linked
@@ -172,6 +172,6 @@ npx supabase db push --linked
 
 ---
 
-## License
+## Licencia
 
 MIT

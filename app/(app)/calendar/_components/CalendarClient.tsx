@@ -386,7 +386,7 @@ function WeekView({ currentDate, events }: { currentDate: Date; events: ICalenda
     start: weekStart,
     end: endOfWeek(currentDate, { weekStartsOn: 1 }),
   })
-  const hours = getDayHourSlots(currentDate, 7, 22)
+  const hours = getDayHourSlots(currentDate, 0, 24)
 
   return (
     <div className="overflow-auto">
@@ -544,7 +544,7 @@ function DayView({
   onRemoveSkillTag: (activityId: string, skillId: string) => void
 }) {
   const router = useRouter()
-  const hours = getDayHourSlots(currentDate, 7, 22)
+  const hours = getDayHourSlots(currentDate, 0, 24)
   const dayEvents = getEventsForDay(events, currentDate)
 
   function handleCheckin(activityId: string) {
