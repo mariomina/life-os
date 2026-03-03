@@ -115,6 +115,9 @@ const EVENT_COLOR_CLASSES: Record<string, string> = {
   gray: 'bg-gray-500/20 border-gray-500 text-gray-700 dark:text-gray-300',
 }
 
+/** Altura fija de cada fila de hora en la vista semanal/diaria (h-14 = 3.5rem = 56px) */
+const ROW_H = 56
+
 // ─── Event color helpers (Story 10.2 AC5) ────────────────────────────────────
 
 /**
@@ -405,11 +408,13 @@ function WeekView({
   currentDate,
   events,
   onSlotClick,
+  onEventClick,
   holidays = [],
 }: {
   currentDate: Date
   events: ICalendarEvent[]
   onSlotClick: (day: Date, hour: number) => void
+  onEventClick: (evt: ICalendarEvent, day: Date, totalDayEvents: number) => void
   holidays?: Holiday[]
 }) {
   const weekStart = startOfWeek(currentDate, { weekStartsOn: 1 })
@@ -418,7 +423,6 @@ function WeekView({
     end: endOfWeek(currentDate, { weekStartsOn: 1 }),
   })
   const hours = getDayHourSlots(currentDate, 0, 24)
-  // Story 10.6 — Map<'YYYY-MM-DD', name> for quick holiday lookup
   const holidayMap = new Map(holidays.map((h) => [h.date, h.name]))
 
   return (
@@ -454,46 +458,73 @@ function WeekView({
         })}
       </div>
 
-      {/* Hour rows */}
-      <div className="relative">
+      {/* Time grid */}
+      <div className="relative" style={{ height: `${24 * ROW_H}px` }}>
+        {/* Background: hour rows for grid lines + slot click areas */}
         {hours.map((hour) => (
           <div
             key={hour.toISOString()}
-            className="grid grid-cols-8 border-b border-border/50 min-h-14"
+            className="absolute left-0 right-0 grid grid-cols-8 border-b border-border/50"
+            style={{ top: `${hour.getHours() * ROW_H}px`, height: `${ROW_H}px` }}
           >
-            <div className="p-1 pr-2 text-right text-xs text-muted-foreground">
+            <div className="p-1 pr-2 text-right text-xs text-muted-foreground self-start">
               {format(hour, 'HH:mm')}
             </div>
-            {weekDays.map((day) => {
-              const dayEvents = getEventsForDay(events, day).filter((e) => {
-                // AC3 fix: local hours for correct timezone display
-                return e.start.getHours() === hour.getHours()
-              })
-              return (
-                <div
-                  key={day.toISOString()}
-                  className="border-l border-border/50 p-0.5 relative cursor-pointer hover:bg-primary/5 transition-colors"
-                  onClick={() => onSlotClick(day, hour.getHours())}
-                >
-                  {dayEvents.map((evt) => {
-                    const hexStyle = getEventColorStyle(evt.calendarColor)
-                    return (
-                      <div
-                        key={evt.id}
-                        data-event
-                        className={`text-xs rounded border-l-2 px-1 py-0.5 mb-0.5 truncate ${hexStyle ? '' : EVENT_COLOR_CLASSES[evt.color ?? 'blue']}`}
-                        style={hexStyle}
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        {evt.title}
-                      </div>
-                    )
-                  })}
-                </div>
-              )
-            })}
+            {weekDays.map((day) => (
+              <div
+                key={day.toISOString()}
+                className="border-l border-border/50 cursor-pointer hover:bg-primary/5 transition-colors"
+                onClick={() => onSlotClick(day, hour.getHours())}
+              />
+            ))}
           </div>
         ))}
+
+        {/* Events overlay — absolutely positioned on top of the grid */}
+        <div className="absolute inset-0 grid grid-cols-8 pointer-events-none">
+          <div /> {/* time gutter spacer */}
+          {weekDays.map((day) => {
+            const dayEvents = getEventsForDay(events, day)
+            return (
+              <div
+                key={day.toISOString()}
+                className="relative border-l border-transparent pointer-events-none"
+              >
+                {dayEvents.map((evt) => {
+                  const startH = evt.start.getHours() + evt.start.getMinutes() / 60
+                  const durationH = Math.max(
+                    0.25,
+                    (evt.end.getTime() - evt.start.getTime()) / 3600000
+                  )
+                  const top = startH * ROW_H
+                  const height = Math.min(durationH, 24 - startH) * ROW_H
+                  const hexStyle = getEventColorStyle(evt.calendarColor)
+                  return (
+                    <div
+                      key={evt.id}
+                      data-event
+                      className={`absolute left-0.5 right-0.5 rounded border-l-2 px-1 py-0.5 text-xs overflow-hidden pointer-events-auto cursor-pointer hover:brightness-110 transition-all ${
+                        hexStyle ? '' : EVENT_COLOR_CLASSES[evt.color ?? 'blue']
+                      }`}
+                      style={{ top, height, ...(hexStyle ?? {}) }}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onEventClick(evt, day, dayEvents.length)
+                      }}
+                    >
+                      <div className="font-medium truncate leading-tight">{evt.title}</div>
+                      {height >= 36 && (
+                        <div className="text-[10px] opacity-70 leading-tight">
+                          {format(evt.start, 'HH:mm')}–{format(evt.end, 'HH:mm')}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )
+          })}
+        </div>
       </div>
     </div>
   )
@@ -867,6 +898,15 @@ export function CalendarClient({
     setIsModalOpen(true)
   }, [])
 
+  // Click on an event in WeekView → navigate to DayView for that day
+  const handleEventClick = useCallback(
+    (_evt: ICalendarEvent, day: Date, _totalDayEvents: number) => {
+      setCurrentDate(day)
+      setView('day')
+    },
+    []
+  )
+
   // Timer state: Map<activityId, TimerState> — initialized from server-side active timers
   const [activeTimers, setActiveTimers] = useState<Map<string, TimerState>>(
     () =>
@@ -1206,6 +1246,7 @@ export function CalendarClient({
               currentDate={currentDate}
               events={visibleEvents}
               onSlotClick={handleSlotClick}
+              onEventClick={handleEventClick}
               holidays={holidays}
             />
           )}
