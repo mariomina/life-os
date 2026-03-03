@@ -366,6 +366,19 @@ export function NewActivityModal({ onClose, defaultDate, calendars = [] }: NewAc
                 Termina
               </p>
 
+              {/* Never */}
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="radio"
+                  name="recurrenceEndType"
+                  value="never"
+                  checked={recurrenceEndType === 'never'}
+                  onChange={() => setRecurrenceEndType('never')}
+                  className="accent-primary"
+                />
+                <span className="text-sm text-foreground">Nunca</span>
+              </label>
+
               {/* After N occurrences */}
               <label className="flex items-center gap-3 cursor-pointer">
                 <input
