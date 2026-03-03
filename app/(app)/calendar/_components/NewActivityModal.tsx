@@ -5,6 +5,7 @@
 // Story 5.7  — CRUD Eventos desde el Calendario.
 // Story 10.4 — Click-to-create con hora pre-llenada + eventos recurrentes.
 // Story 10.6 — Duración personalizada + recurrencia días hábiles.
+// Story 10.7 — Recurrencia personalizada unificada (Google Calendar style).
 
 import { useRef, useEffect, useState, useTransition } from 'react'
 import { format } from 'date-fns'
@@ -16,6 +17,7 @@ import {
   RECURRENCE_DEFAULTS,
   describeRecurrence,
   type RecurrenceType,
+  type RecurrenceUnit,
   type RecurrenceOptions,
 } from '@/lib/calendar/recurrence-utils'
 
@@ -41,6 +43,15 @@ const DURATION_OPTIONS = [
 ]
 
 const RECURRENCE_OPTIONS = Object.entries(RECURRENCE_LABELS) as [RecurrenceType, string][]
+
+const DAY_LABELS = ['D', 'L', 'M', 'X', 'J', 'V', 'S']
+
+const UNIT_OPTIONS: { value: RecurrenceUnit; label: string }[] = [
+  { value: 'day', label: 'día' },
+  { value: 'week', label: 'semana' },
+  { value: 'month', label: 'mes' },
+  { value: 'year', label: 'año' },
+]
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -70,9 +81,15 @@ export function NewActivityModal({ onClose, defaultDate, calendars = [] }: NewAc
 
   // Recurrence state
   const [recurrenceType, setRecurrenceType] = useState<RecurrenceType>('none')
-  const [recurrenceEndType, setRecurrenceEndType] = useState<'count' | 'date'>('count')
+  const [recurrenceEndType, setRecurrenceEndType] = useState<'count' | 'date' | 'never'>('count')
   const [recurrenceCount, setRecurrenceCount] = useState(RECURRENCE_DEFAULTS.weekly)
   const [recurrenceEndDate, setRecurrenceEndDate] = useState(() => defaultEndDate(defaultDate))
+
+  // Custom recurrence state (Story 10.7)
+  const [customInterval, setCustomInterval] = useState(1)
+  const [customUnit, setCustomUnit] = useState<RecurrenceUnit>('week')
+  const [customDays, setCustomDays] = useState<Set<number>>(new Set([1, 2, 3, 4, 5]))
+  const [customExcludeHolidays, setCustomExcludeHolidays] = useState(false)
 
   // Default time: use hour from the clicked slot if it was set, otherwise next round hour
   const defaultTime = (() => {
@@ -87,10 +104,26 @@ export function NewActivityModal({ onClose, defaultDate, calendars = [] }: NewAc
   // Keep recurrence defaults in sync with type changes
   const handleRecurrenceTypeChange = (type: RecurrenceType) => {
     setRecurrenceType(type)
-    setRecurrenceCount(RECURRENCE_DEFAULTS[type])
+    if (type === 'custom') {
+      setRecurrenceEndType('never')
+      setRecurrenceCount(RECURRENCE_DEFAULTS.custom)
+    } else {
+      setRecurrenceEndType('count')
+      setRecurrenceCount(RECURRENCE_DEFAULTS[type])
+    }
   }
 
-  // Show dialog on mount (component is conditionally rendered by parent, so mount = open)
+  // Toggle a day in the custom days set
+  const toggleCustomDay = (day: number) => {
+    setCustomDays((prev) => {
+      const next = new Set(prev)
+      if (next.has(day)) next.delete(day)
+      else next.add(day)
+      return next
+    })
+  }
+
+  // Show dialog on mount (component is conditionally rendered by parent)
   useEffect(() => {
     const dialog = dialogRef.current
     if (dialog) dialog.showModal()
@@ -108,6 +141,21 @@ export function NewActivityModal({ onClose, defaultDate, calendars = [] }: NewAc
   function handleSubmit(formData: FormData) {
     // Inject effective duration (preset or custom) into the form data
     formData.set('duration', String(effectiveDuration))
+    // Inject recurrence fields
+    formData.set('recurrenceType', recurrenceType)
+    formData.set('recurrenceEndType', recurrenceEndType)
+    if (recurrenceEndType === 'count') {
+      formData.set('recurrenceCount', String(recurrenceCount))
+    }
+    if (recurrenceEndType === 'date') {
+      formData.set('recurrenceEndDate', recurrenceEndDate)
+    }
+    if (recurrenceType === 'custom') {
+      formData.set('recurrenceInterval', String(customInterval))
+      formData.set('recurrenceUnit', customUnit)
+      formData.set('recurrenceDays', JSON.stringify([...customDays].sort((a, b) => a - b)))
+      formData.set('recurrenceExcludeHolidays', String(customExcludeHolidays))
+    }
     setError(null)
     startTransition(async () => {
       const result = await createActivity(formData)
@@ -128,6 +176,10 @@ export function NewActivityModal({ onClose, defaultDate, calendars = [] }: NewAc
             endType: recurrenceEndType,
             count: recurrenceCount,
             endDate: recurrenceEndDate,
+            interval: customInterval,
+            unit: customUnit,
+            daysOfWeek: [...customDays],
+            excludeHolidays: customExcludeHolidays,
           } satisfies RecurrenceOptions,
           defaultDate
         )
@@ -285,7 +337,7 @@ export function NewActivityModal({ onClose, defaultDate, calendars = [] }: NewAc
           </div>
         )}
 
-        {/* ── Recurrencia (Story 10.4 / 10.6) ────────────────────────────── */}
+        {/* ── Recurrencia (Story 10.4 / 10.6 / 10.7) ──────────────────────── */}
         <div className="space-y-3 border-t border-border pt-4">
           <div className="flex items-center gap-2">
             <RefreshCw className="h-4 w-4 text-muted-foreground shrink-0" />
@@ -296,7 +348,6 @@ export function NewActivityModal({ onClose, defaultDate, calendars = [] }: NewAc
 
           <select
             id="recurrenceType"
-            name="recurrenceType"
             value={recurrenceType}
             onChange={(e) => handleRecurrenceTypeChange(e.target.value as RecurrenceType)}
             className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
@@ -308,20 +359,173 @@ export function NewActivityModal({ onClose, defaultDate, calendars = [] }: NewAc
             ))}
           </select>
 
-          {/* Recurrence end options — only visible when type !== 'none' */}
-          {recurrenceType !== 'none' && (
+          {/* End options for simple types (daily / weekly / monthly / yearly) */}
+          {recurrenceType !== 'none' && recurrenceType !== 'custom' && (
             <div className="space-y-3 pl-1">
-              {/* End type radio */}
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                Termina
+              </p>
+
+              {/* After N occurrences */}
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="radio"
+                  name="recurrenceEndType"
+                  value="count"
+                  checked={recurrenceEndType === 'count'}
+                  onChange={() => setRecurrenceEndType('count')}
+                  className="accent-primary"
+                />
+                <span className="text-sm text-foreground flex items-center gap-2">
+                  Después de
+                  <input
+                    type="number"
+                    min={1}
+                    max={365}
+                    value={recurrenceCount}
+                    disabled={recurrenceEndType !== 'count'}
+                    onChange={(e) => setRecurrenceCount(Math.max(1, Number(e.target.value)))}
+                    className="w-16 rounded-lg border border-border bg-background px-2 py-1 text-sm text-center focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50"
+                    onClick={() => setRecurrenceEndType('count')}
+                  />
+                  ocurrencias
+                </span>
+              </label>
+
+              {/* On specific date */}
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="radio"
+                  name="recurrenceEndType"
+                  value="date"
+                  checked={recurrenceEndType === 'date'}
+                  onChange={() => setRecurrenceEndType('date')}
+                  className="accent-primary"
+                />
+                <span className="text-sm text-foreground flex items-center gap-2">
+                  El día
+                  <input
+                    type="date"
+                    value={recurrenceEndDate}
+                    disabled={recurrenceEndType !== 'date'}
+                    min={format(defaultDate, 'yyyy-MM-dd')}
+                    onChange={(e) => setRecurrenceEndDate(e.target.value)}
+                    className="rounded-lg border border-border bg-background px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50"
+                    onClick={() => setRecurrenceEndType('date')}
+                  />
+                </span>
+              </label>
+            </div>
+          )}
+
+          {/* ── Custom recurrence panel (Story 10.7) ───────────────────── */}
+          {recurrenceType === 'custom' && (
+            <div className="space-y-3 pl-1 border border-border rounded-xl p-3 bg-muted/20">
+              {/* Interval + Unit */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-sm text-foreground">Repetir cada</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={99}
+                  value={customInterval}
+                  onChange={(e) => setCustomInterval(Math.max(1, Number(e.target.value)))}
+                  className="w-14 rounded-lg border border-border bg-background px-2 py-1 text-sm text-center focus:outline-none focus:ring-2 focus:ring-primary/50"
+                />
+                <select
+                  value={customUnit}
+                  onChange={(e) => setCustomUnit(e.target.value as RecurrenceUnit)}
+                  className="rounded-lg border border-border bg-background px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                >
+                  {UNIT_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Day toggles — only when unit='week' */}
+              {customUnit === 'week' && (
+                <div className="space-y-2">
+                  <p className="text-xs text-muted-foreground">Repetir el</p>
+                  <div className="flex gap-1">
+                    {DAY_LABELS.map((label, idx) => (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => toggleCustomDay(idx)}
+                        className={`w-8 h-8 rounded-full text-xs font-medium transition-colors ${
+                          customDays.has(idx)
+                            ? 'bg-primary text-primary-foreground'
+                            : 'bg-muted text-muted-foreground hover:bg-muted/80'
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Excluir festivos — only when unit='week' and days selected */}
+              {customUnit === 'week' && customDays.size > 0 && (
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={customExcludeHolidays}
+                    onChange={(e) => setCustomExcludeHolidays(e.target.checked)}
+                    className="accent-primary"
+                  />
+                  <span className="text-sm text-foreground">Excluir festivos</span>
+                </label>
+              )}
+
+              {/* Finaliza */}
               <div className="space-y-2">
                 <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                  Termina
+                  Finaliza
                 </p>
 
-                {/* After N occurrences */}
                 <label className="flex items-center gap-3 cursor-pointer">
                   <input
                     type="radio"
-                    name="recurrenceEndType"
+                    name="recurrenceEndTypeCustom"
+                    value="never"
+                    checked={recurrenceEndType === 'never'}
+                    onChange={() => setRecurrenceEndType('never')}
+                    className="accent-primary"
+                  />
+                  <span className="text-sm text-foreground">Nunca</span>
+                </label>
+
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="recurrenceEndTypeCustom"
+                    value="date"
+                    checked={recurrenceEndType === 'date'}
+                    onChange={() => setRecurrenceEndType('date')}
+                    className="accent-primary"
+                  />
+                  <span className="text-sm text-foreground flex items-center gap-2">
+                    El
+                    <input
+                      type="date"
+                      value={recurrenceEndDate}
+                      disabled={recurrenceEndType !== 'date'}
+                      min={format(defaultDate, 'yyyy-MM-dd')}
+                      onChange={(e) => setRecurrenceEndDate(e.target.value)}
+                      className="rounded-lg border border-border bg-background px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50"
+                      onClick={() => setRecurrenceEndType('date')}
+                    />
+                  </span>
+                </label>
+
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="recurrenceEndTypeCustom"
                     value="count"
                     checked={recurrenceEndType === 'count'}
                     onChange={() => setRecurrenceEndType('count')}
@@ -331,7 +535,6 @@ export function NewActivityModal({ onClose, defaultDate, calendars = [] }: NewAc
                     Después de
                     <input
                       type="number"
-                      name="recurrenceCount"
                       min={1}
                       max={365}
                       value={recurrenceCount}
@@ -343,57 +546,18 @@ export function NewActivityModal({ onClose, defaultDate, calendars = [] }: NewAc
                     ocurrencias
                   </span>
                 </label>
-
-                {/* On specific date */}
-                <label className="flex items-center gap-3 cursor-pointer">
-                  <input
-                    type="radio"
-                    name="recurrenceEndType"
-                    value="date"
-                    checked={recurrenceEndType === 'date'}
-                    onChange={() => setRecurrenceEndType('date')}
-                    className="accent-primary"
-                  />
-                  <span className="text-sm text-foreground flex items-center gap-2">
-                    El día
-                    <input
-                      type="date"
-                      name="recurrenceEndDate"
-                      value={recurrenceEndDate}
-                      disabled={recurrenceEndType !== 'date'}
-                      min={format(defaultDate, 'yyyy-MM-dd')}
-                      onChange={(e) => setRecurrenceEndDate(e.target.value)}
-                      className="rounded-lg border border-border bg-background px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50"
-                      onClick={() => setRecurrenceEndType('date')}
-                    />
-                  </span>
-                </label>
               </div>
-
-              {/* Preview */}
-              {recurrencePreview && (
-                <p className="text-xs text-primary bg-primary/8 rounded-lg px-3 py-2">
-                  {recurrencePreview}
-                  {recurrenceType === 'workdays' && (
-                    <span className="block mt-0.5 text-orange-600 dark:text-orange-400">
-                      Los festivos configurados serán excluidos al guardar.
-                    </span>
-                  )}
-                </p>
-              )}
             </div>
           )}
-        </div>
-        {/* ── Fin recurrencia ─────────────────────────────────────────────── */}
 
-        {/* Hidden fields para recurrencia (siempre en el form para el server action) */}
-        <input type="hidden" name="recurrenceType" value={recurrenceType} />
-        {recurrenceType !== 'none' && recurrenceEndType === 'count' && (
-          <input type="hidden" name="recurrenceCount" value={recurrenceCount} />
-        )}
-        {recurrenceType !== 'none' && recurrenceEndType === 'date' && (
-          <input type="hidden" name="recurrenceEndDate" value={recurrenceEndDate} />
-        )}
+          {/* Preview */}
+          {recurrencePreview && (
+            <p className="text-xs text-primary bg-primary/8 rounded-lg px-3 py-2">
+              {recurrencePreview}
+            </p>
+          )}
+        </div>
+        {/* ── Fin recurrencia ──────────────────────────────────────────────── */}
 
         {/* Error message */}
         {error && (

@@ -1,5 +1,5 @@
 // tests/unit/calendar/recurrence-utils.test.ts
-// Unit tests for generateOccurrences and describeRecurrence — Story 10.4 / 10.6
+// Unit tests for generateOccurrences and describeRecurrence — Story 10.4 / 10.6 / 10.7
 
 import { describe, it, expect } from 'vitest'
 import {
@@ -43,16 +43,6 @@ describe('generateOccurrences', () => {
     }
   })
 
-  it('weekdays count=5 returns only Mon-Fri', () => {
-    const result = generateOccurrences(BASE_DATE, makeOpts({ type: 'weekdays', count: 5 }))
-    expect(result).toHaveLength(5)
-    for (const date of result) {
-      const day = date.getDay() // 0=Sun, 6=Sat
-      expect(day).toBeGreaterThanOrEqual(1)
-      expect(day).toBeLessThanOrEqual(5)
-    }
-  })
-
   it('weekly count=4 returns 4 dates exactly 7 days apart', () => {
     const result = generateOccurrences(BASE_DATE, makeOpts({ type: 'weekly', count: 4 }))
     expect(result).toHaveLength(4)
@@ -76,7 +66,7 @@ describe('generateOccurrences', () => {
   })
 
   it('count=1 returns only the start date regardless of type', () => {
-    for (const type of ['daily', 'weekdays', 'weekly', 'monthly'] as const) {
+    for (const type of ['daily', 'weekly', 'monthly'] as const) {
       const result = generateOccurrences(BASE_DATE, makeOpts({ type, count: 1 }))
       expect(result).toHaveLength(1)
       expect(result[0]).toEqual(BASE_DATE)
@@ -180,29 +170,33 @@ describe('describeRecurrence', () => {
     expect(result).toMatch(/3/)
     expect(result).toMatch(/año/)
   })
-
-  it('workdays count=5 returns readable string with "hábiles"', () => {
-    const result = describeRecurrence(makeOpts({ type: 'workdays', count: 5 }), BASE_DATE)
-    expect(result).toMatch(/5/)
-    expect(result).toMatch(/hábiles/)
-  })
 })
 
-// ─── workdays (Story 10.6) ─────────────────────────────────────────────────────
+// ─── custom recurrence (Story 10.7) ───────────────────────────────────────────
 
-describe('workdays recurrence', () => {
-  it('workdays count=5 returns only Mon-Fri dates', () => {
-    const result = generateOccurrences(BASE_DATE, makeOpts({ type: 'workdays', count: 5 }))
+describe('custom recurrence — Mon-Fri (daysOfWeek=[1,2,3,4,5])', () => {
+  function makeCustomWeekdays(overrides: Partial<RecurrenceOptions> = {}): RecurrenceOptions {
+    return makeOpts({
+      type: 'custom',
+      unit: 'week',
+      interval: 1,
+      daysOfWeek: [1, 2, 3, 4, 5],
+      ...overrides,
+    })
+  }
+
+  it('count=5 returns only Mon-Fri dates', () => {
+    const result = generateOccurrences(BASE_DATE, makeCustomWeekdays({ count: 5 }))
     expect(result).toHaveLength(5)
     for (const date of result) {
-      const day = date.getDay()
+      const day = date.getDay() // 0=Sun, 6=Sat
       expect(day).toBeGreaterThanOrEqual(1)
       expect(day).toBeLessThanOrEqual(5)
     }
   })
 
-  it('workdays count=10 returns exactly 10 Mon-Fri dates', () => {
-    const result = generateOccurrences(BASE_DATE, makeOpts({ type: 'workdays', count: 10 }))
+  it('count=10 returns exactly 10 Mon-Fri dates', () => {
+    const result = generateOccurrences(BASE_DATE, makeCustomWeekdays({ count: 10 }))
     expect(result).toHaveLength(10)
     for (const date of result) {
       const day = date.getDay()
@@ -211,22 +205,158 @@ describe('workdays recurrence', () => {
     }
   })
 
-  it('workdays preserves the hour and minute of the start date', () => {
+  it('preserves the hour and minute of the start date', () => {
     const start = new Date('2026-03-09T08:30:00') // Monday
-    const result = generateOccurrences(start, makeOpts({ type: 'workdays', count: 3 }))
+    const result = generateOccurrences(start, makeCustomWeekdays({ count: 3 }))
     for (const date of result) {
       expect(date.getHours()).toBe(8)
       expect(date.getMinutes()).toBe(30)
     }
   })
 
-  it('workdays starting on Friday only includes Fri then skips to Mon', () => {
+  it('starting on Friday only includes Fri then skips to Mon', () => {
     // 2026-03-13 is a Friday
     const friday = new Date('2026-03-13T09:00:00')
-    const result = generateOccurrences(friday, makeOpts({ type: 'workdays', count: 3 }))
+    const result = generateOccurrences(friday, makeCustomWeekdays({ count: 3 }))
     expect(result).toHaveLength(3)
     expect(result[0].getDay()).toBe(5) // Fri
     expect(result[1].getDay()).toBe(1) // Mon (skip Sat/Sun)
     expect(result[2].getDay()).toBe(2) // Tue
+  })
+})
+
+describe('custom recurrence — biweekly on Wed-Fri', () => {
+  it('every 2 weeks on Wed(3) and Fri(5) returns correct dates', () => {
+    // BASE_DATE = 2026-03-09 (Monday)
+    // Week of 09-Mar: Wed=11-Mar, Fri=13-Mar
+    // Skip week of 16-Mar (interval=2)
+    // Week of 23-Mar: Wed=25-Mar, Fri=27-Mar
+    const result = generateOccurrences(
+      BASE_DATE,
+      makeOpts({
+        type: 'custom',
+        unit: 'week',
+        interval: 2,
+        daysOfWeek: [3, 5],
+        count: 4,
+      })
+    )
+    expect(result).toHaveLength(4)
+    expect(result[0].getDate()).toBe(11) // Wed Mar 11
+    expect(result[1].getDate()).toBe(13) // Fri Mar 13
+    expect(result[2].getDate()).toBe(25) // Wed Mar 25
+    expect(result[3].getDate()).toBe(27) // Fri Mar 27
+  })
+})
+
+describe('custom recurrence — endType=never', () => {
+  it('uses MAX_OCCURRENCES=260 for custom type', () => {
+    const result = generateOccurrences(
+      BASE_DATE,
+      makeOpts({
+        type: 'custom',
+        unit: 'week',
+        interval: 1,
+        daysOfWeek: [1, 2, 3, 4, 5],
+        endType: 'never',
+        count: 1, // ignored when endType='never'
+      })
+    )
+    expect(result).toHaveLength(260)
+    for (const date of result) {
+      const day = date.getDay()
+      expect(day).toBeGreaterThanOrEqual(1)
+      expect(day).toBeLessThanOrEqual(5)
+    }
+  })
+})
+
+describe('custom recurrence — simple interval (no days)', () => {
+  it('every 3 days returns dates 3 days apart', () => {
+    const result = generateOccurrences(
+      BASE_DATE,
+      makeOpts({ type: 'custom', unit: 'day', interval: 3, count: 4 })
+    )
+    expect(result).toHaveLength(4)
+    for (let i = 1; i < result.length; i++) {
+      const diffDays = (result[i].getTime() - result[i - 1].getTime()) / (1000 * 60 * 60 * 24)
+      expect(diffDays).toBe(3)
+    }
+  })
+
+  it('every 2 months returns months 2 apart on same day', () => {
+    const result = generateOccurrences(
+      BASE_DATE,
+      makeOpts({ type: 'custom', unit: 'month', interval: 2, count: 3 })
+    )
+    expect(result).toHaveLength(3)
+    expect(result[0].getMonth()).toBe(BASE_DATE.getMonth())
+    expect(result[1].getMonth()).toBe(BASE_DATE.getMonth() + 2)
+    expect(result[2].getMonth()).toBe(BASE_DATE.getMonth() + 4)
+    for (const date of result) {
+      expect(date.getDate()).toBe(BASE_DATE.getDate())
+    }
+  })
+})
+
+describe('describeRecurrence — custom type', () => {
+  it('custom weekly Mon-Fri shows day abbreviations', () => {
+    const result = describeRecurrence(
+      makeOpts({
+        type: 'custom',
+        unit: 'week',
+        interval: 1,
+        daysOfWeek: [1, 2, 3, 4, 5],
+        count: 5,
+      }),
+      BASE_DATE
+    )
+    expect(result).toMatch(/semana/)
+    expect(result).toMatch(/Lu/)
+    expect(result).toMatch(/Vi/)
+  })
+
+  it('custom every 2 weeks shows interval in label', () => {
+    const result = describeRecurrence(
+      makeOpts({
+        type: 'custom',
+        unit: 'week',
+        interval: 2,
+        daysOfWeek: [3],
+        count: 4,
+      }),
+      BASE_DATE
+    )
+    expect(result).toMatch(/2 semanas/)
+  })
+
+  it('custom endType=never shows "hasta"', () => {
+    const result = describeRecurrence(
+      makeOpts({
+        type: 'custom',
+        unit: 'week',
+        interval: 1,
+        daysOfWeek: [1, 2, 3, 4, 5],
+        endType: 'never',
+        count: 1,
+      }),
+      BASE_DATE
+    )
+    expect(result).toMatch(/hasta/)
+  })
+
+  it('custom excludeHolidays shows excl. festivos', () => {
+    const result = describeRecurrence(
+      makeOpts({
+        type: 'custom',
+        unit: 'week',
+        interval: 1,
+        daysOfWeek: [1, 2, 3, 4, 5],
+        excludeHolidays: true,
+        count: 5,
+      }),
+      BASE_DATE
+    )
+    expect(result).toMatch(/festivos/)
   })
 })

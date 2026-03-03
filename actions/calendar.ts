@@ -6,6 +6,7 @@
 // Story 5.7 — CRUD Eventos desde el Calendario.
 // Story 10.4 — Recurrencia: crea múltiples ocurrencias agrupadas por recurrenceGroupId.
 // Story 10.6 — Recurrencia 'workdays': filtra festivos del usuario post-generación.
+// Story 10.7 — Tipo 'custom' con interval/unit/daysOfWeek/excludeHolidays.
 
 import { eq, and, asc } from 'drizzle-orm'
 import { format } from 'date-fns'
@@ -18,6 +19,7 @@ import { getHolidaysForUser } from '@/lib/db/queries/holidays'
 import {
   generateOccurrences,
   type RecurrenceType,
+  type RecurrenceUnit,
   type RecurrenceOptions,
 } from '@/lib/calendar/recurrence-utils'
 
@@ -69,8 +71,16 @@ export async function createActivity(formData: FormData): Promise<ActionResult> 
   const recurrenceEndType = ((formData.get('recurrenceEndType') as string | null) ?? 'count') as
     | 'count'
     | 'date'
+    | 'never'
   const recurrenceCount = Math.max(1, Number(formData.get('recurrenceCount') ?? 1))
   const recurrenceEndDate = (formData.get('recurrenceEndDate') as string | null) ?? ''
+  // Custom recurrence fields (Story 10.7)
+  const recurrenceInterval = Math.max(1, Number(formData.get('recurrenceInterval') ?? 1))
+  const recurrenceUnit = ((formData.get('recurrenceUnit') as string | null) ??
+    'week') as RecurrenceUnit
+  const recurrenceDaysRaw = (formData.get('recurrenceDays') as string | null) ?? '[]'
+  const recurrenceDays: number[] = JSON.parse(recurrenceDaysRaw)
+  const recurrenceExcludeHolidays = formData.get('recurrenceExcludeHolidays') === 'true'
 
   // Validate inputs
   const trimmedTitle = title.trim()
@@ -108,11 +118,15 @@ export async function createActivity(formData: FormData): Promise<ActionResult> 
         endType: recurrenceEndType,
         count: recurrenceCount,
         endDate: recurrenceEndDate,
+        interval: recurrenceInterval,
+        unit: recurrenceUnit,
+        daysOfWeek: recurrenceDays,
+        excludeHolidays: recurrenceExcludeHolidays,
       }
       let occurrences = generateOccurrences(scheduledAt, recurrenceOptions)
 
-      // Story 10.6: para 'workdays', filtrar fechas que caigan en festivos del usuario
-      if (recurrenceType === 'workdays') {
+      // Story 10.7: filtrar festivos cuando excludeHolidays=true (aplica a cualquier tipo)
+      if (recurrenceExcludeHolidays) {
         const userHolidays = await getHolidaysForUser(userId)
         const holidayDates = new Set(userHolidays.map((h) => h.date)) // Set<'YYYY-MM-DD'>
         occurrences = occurrences.filter((d) => !holidayDates.has(format(d, 'yyyy-MM-dd')))
