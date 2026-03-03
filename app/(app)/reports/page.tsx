@@ -10,7 +10,9 @@ import {
   generateReportInsights,
   getAgentLeverageReport,
 } from '@/actions/reports'
+import { getTimeByCalendarReport } from '@/actions/calendars'
 import { ReportsClient } from './_components/ReportsClient'
+import { TimeByCalendarWidget } from './_components/TimeByCalendarWidget'
 
 /**
  * Página de Informes — Server Component.
@@ -18,6 +20,7 @@ import { ReportsClient } from './_components/ReportsClient'
  * Story 8.2 — Habit Consistency + CCR + OKR Progress + Area Health Trend.
  * Story 8.6 — Insights IA via ILLMProvider.
  * Story 8.7 — Agent Leverage Report.
+ * Story 10.3 — Tiempo por Calendario.
  */
 export default async function ReportsPage() {
   const supabase = await createSupabaseServerClient()
@@ -39,6 +42,7 @@ export default async function ReportsPage() {
     areaHealthTrends,
     insights,
     leverage,
+    timeByCalendar,
   ] = await Promise.all([
     getTimeByArea('week'),
     getTimeByProject('week'),
@@ -48,19 +52,25 @@ export default async function ReportsPage() {
     getAreaHealthTrends(),
     generateReportInsights('week').catch(() => null),
     getAgentLeverageReport('week'),
+    getTimeByCalendarReport('month'),
   ])
 
   return (
-    <ReportsClient
-      initialTimeByArea={timeByArea}
-      initialTimeByProject={timeByProject}
-      initialHabitConsistency={habitConsistency}
-      initialCCR={ccr}
-      initialOkrProgress={okrProgress}
-      initialAreaHealthTrends={areaHealthTrends}
-      initialInsights={insights}
-      initialLeverage={leverage}
-      initialPeriod="week"
-    />
+    <>
+      <ReportsClient
+        initialTimeByArea={timeByArea}
+        initialTimeByProject={timeByProject}
+        initialHabitConsistency={habitConsistency}
+        initialCCR={ccr}
+        initialOkrProgress={okrProgress}
+        initialAreaHealthTrends={areaHealthTrends}
+        initialInsights={insights}
+        initialLeverage={leverage}
+        initialPeriod="week"
+      />
+      <div className="container max-w-3xl pb-8">
+        <TimeByCalendarWidget initialData={timeByCalendar} initialPeriod="month" />
+      </div>
+    </>
   )
 }

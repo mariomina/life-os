@@ -18,6 +18,7 @@ export * from './areas'
 export * from './workflow-templates'
 export * from './skills'
 export * from './habits'
+export * from './calendars'
 
 // ── Level 2: Depend on Level 1 ────────────────────────────────
 export * from './area-scores'

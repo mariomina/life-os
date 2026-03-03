@@ -16,6 +16,7 @@ import {
   getActiveTimerStartTimes,
 } from '@/actions/timer'
 import { getUserSkills, getSkillTagsForActivities } from '@/lib/db/queries/skills'
+import { getCalendarsForUser, seedDefaultCalendars } from '@/actions/calendars'
 import type { ICalendarEvent } from '@/lib/calendar/calendar-utils'
 
 export default async function CalendarPage() {
@@ -28,11 +29,15 @@ export default async function CalendarPage() {
     redirect('/login')
   }
 
-  // Fetch activities and areas in parallel; fall back to empty arrays on error
+  // Seed default calendars on first visit if user has none
+  await seedDefaultCalendars()
+
+  // Fetch activities, areas, and calendars in parallel
   let events: ICalendarEvent[] = []
-  const [activitiesResult, areas] = await Promise.allSettled([
+  const [activitiesResult, areasResult, calendarsResult] = await Promise.allSettled([
     getActivitiesForYear(user.id, new Date()),
     getAreasForUser(),
+    getCalendarsForUser(),
   ])
 
   if (activitiesResult.status === 'fulfilled') {
@@ -48,13 +53,17 @@ export default async function CalendarPage() {
           end: new Date(start.getTime() + durationMs),
           color: a.areaColor,
           description: a.areaName ?? undefined,
+          // Story 10.2: calendarColor tiene precedencia sobre areaColor en la UI
+          calendarId: a.calendarId ?? undefined,
+          calendarColor: a.calendarColor ?? undefined,
         }
       })
   } else {
     console.error('[CalendarPage] getActivitiesForYear failed:', activitiesResult.reason)
   }
 
-  const areasData = areas.status === 'fulfilled' ? areas.value : []
+  const areasData = areasResult.status === 'fulfilled' ? areasResult.value : []
+  const calendarsData = calendarsResult.status === 'fulfilled' ? calendarsResult.value : []
 
   // Fetch time tracking data + skills data in parallel (Story 5.8 + 5.9 + 7.2)
   const activityIds = events.map((e) => e.id)
@@ -79,27 +88,18 @@ export default async function CalendarPage() {
   const userSkills = userSkillsResult.status === 'fulfilled' ? userSkillsResult.value : []
   const initialSkillTags = skillTagsResult.status === 'fulfilled' ? skillTagsResult.value : {}
 
+  // Story 10.2 (AC7): no wrapper div — layout.tsx provides h-full container
   return (
-    <div className="flex flex-col gap-4 h-[calc(100vh-8rem)]">
-      {/* Header */}
-      <section className="space-y-1">
-        <h1 className="text-2xl font-bold text-foreground">Calendario</h1>
-        <p className="text-sm text-muted-foreground">
-          Visualiza y planifica tus actividades, hábitos y eventos
-        </p>
-      </section>
-
-      {/* Calendar */}
-      <CalendarClient
-        events={events}
-        defaultView="week"
-        areas={areasData}
-        timeTotals={timeTotals}
-        initialActiveTimers={activeTimers}
-        initialTimerStartedAt={timerStartTimes}
-        userSkills={userSkills}
-        initialSkillTags={initialSkillTags}
-      />
-    </div>
+    <CalendarClient
+      events={events}
+      defaultView="week"
+      areas={areasData}
+      calendars={calendarsData}
+      timeTotals={timeTotals}
+      initialActiveTimers={activeTimers}
+      initialTimerStartedAt={timerStartTimes}
+      userSkills={userSkills}
+      initialSkillTags={initialSkillTags}
+    />
   )
 }

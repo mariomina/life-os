@@ -7,6 +7,7 @@ import { db, assertDatabaseUrl } from '@/lib/db/client'
 import { stepsActivities } from '@/lib/db/schema/steps-activities'
 import { areas } from '@/lib/db/schema/areas'
 import { habits } from '@/lib/db/schema/habits'
+import { calendars } from '@/lib/db/schema/calendars'
 import type { TEventColor } from '@/lib/calendar/calendar-utils'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -21,6 +22,8 @@ export interface ActivityForCalendar {
   areaColor: TEventColor
   habitTitle: string | null
   habitId: string | null
+  calendarId: string | null
+  calendarColor: string | null // hex — tiene precedencia sobre areaColor en la UI
 }
 
 // ─── Color mapping ────────────────────────────────────────────────────────────
@@ -81,10 +84,13 @@ export async function getActivitiesForDay(
       areaName: areas.name,
       areaLevel: areas.maslowLevel,
       habitTitle: habits.title,
+      calendarId: calendars.id,
+      calendarColor: calendars.color,
     })
     .from(stepsActivities)
     .leftJoin(areas, eq(stepsActivities.areaId, areas.id))
     .leftJoin(habits, eq(stepsActivities.habitId, habits.id))
+    .leftJoin(calendars, eq(stepsActivities.calendarId, calendars.id))
     .where(
       and(
         eq(stepsActivities.userId, userId),
@@ -104,6 +110,8 @@ export async function getActivitiesForDay(
     areaColor: maslowLevelToColor(row.areaLevel ?? null),
     habitTitle: row.habitTitle ?? null,
     habitId: row.activity.habitId,
+    calendarId: row.calendarId ?? null,
+    calendarColor: row.calendarColor ?? null,
   }))
 }
 
@@ -155,10 +163,13 @@ export async function getActivitiesForWeek(
       areaName: areas.name,
       areaLevel: areas.maslowLevel,
       habitTitle: habits.title,
+      calendarId: calendars.id,
+      calendarColor: calendars.color,
     })
     .from(stepsActivities)
     .leftJoin(areas, eq(stepsActivities.areaId, areas.id))
     .leftJoin(habits, eq(stepsActivities.habitId, habits.id))
+    .leftJoin(calendars, eq(stepsActivities.calendarId, calendars.id))
     .where(
       and(
         eq(stepsActivities.userId, userId),
@@ -178,6 +189,8 @@ export async function getActivitiesForWeek(
     areaColor: maslowLevelToColor(row.areaLevel ?? null),
     habitTitle: row.habitTitle ?? null,
     habitId: row.activity.habitId,
+    calendarId: row.calendarId ?? null,
+    calendarColor: row.calendarColor ?? null,
   }))
 }
 
@@ -215,10 +228,13 @@ export async function getActivitiesForMonth(
       areaName: areas.name,
       areaLevel: areas.maslowLevel,
       habitTitle: habits.title,
+      calendarId: calendars.id,
+      calendarColor: calendars.color,
     })
     .from(stepsActivities)
     .leftJoin(areas, eq(stepsActivities.areaId, areas.id))
     .leftJoin(habits, eq(stepsActivities.habitId, habits.id))
+    .leftJoin(calendars, eq(stepsActivities.calendarId, calendars.id))
     .where(
       and(
         eq(stepsActivities.userId, userId),
@@ -238,6 +254,8 @@ export async function getActivitiesForMonth(
     areaColor: maslowLevelToColor(row.areaLevel ?? null),
     habitTitle: row.habitTitle ?? null,
     habitId: row.activity.habitId,
+    calendarId: row.calendarId ?? null,
+    calendarColor: row.calendarColor ?? null,
   }))
 }
 
@@ -270,10 +288,13 @@ export async function getActivitiesForRange(
       areaName: areas.name,
       areaLevel: areas.maslowLevel,
       habitTitle: habits.title,
+      calendarId: calendars.id,
+      calendarColor: calendars.color,
     })
     .from(stepsActivities)
     .leftJoin(areas, eq(stepsActivities.areaId, areas.id))
     .leftJoin(habits, eq(stepsActivities.habitId, habits.id))
+    .leftJoin(calendars, eq(stepsActivities.calendarId, calendars.id))
     .where(
       and(
         eq(stepsActivities.userId, userId),
@@ -293,6 +314,8 @@ export async function getActivitiesForRange(
     areaColor: maslowLevelToColor(row.areaLevel ?? null),
     habitTitle: row.habitTitle ?? null,
     habitId: row.activity.habitId,
+    calendarId: row.calendarId ?? null,
+    calendarColor: row.calendarColor ?? null,
   }))
 }
 
@@ -419,10 +442,13 @@ export async function getActivitiesForYear(
       areaName: areas.name,
       areaLevel: areas.maslowLevel,
       habitTitle: habits.title,
+      calendarId: calendars.id,
+      calendarColor: calendars.color,
     })
     .from(stepsActivities)
     .leftJoin(areas, eq(stepsActivities.areaId, areas.id))
     .leftJoin(habits, eq(stepsActivities.habitId, habits.id))
+    .leftJoin(calendars, eq(stepsActivities.calendarId, calendars.id))
     .where(
       and(
         eq(stepsActivities.userId, userId),
@@ -442,5 +468,7 @@ export async function getActivitiesForYear(
     areaColor: maslowLevelToColor(row.areaLevel ?? null),
     habitTitle: row.habitTitle ?? null,
     habitId: row.activity.habitId,
+    calendarId: row.calendarId ?? null,
+    calendarColor: row.calendarColor ?? null,
   }))
 }

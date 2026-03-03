@@ -3,6 +3,7 @@ import { tasks } from './tasks'
 import { areas } from './areas'
 import { habits } from './habits'
 import { okrs } from './okrs'
+import { calendars } from './calendars'
 
 /**
  * UNIFIED Steps + Activities entity (FR5 — Steps = Activities).
@@ -64,6 +65,8 @@ export const stepsActivities = pgTable(
     order: integer('order'),
     /** Optional link to a Key Result — used to auto-calculate KR progress */
     okrId: uuid('okr_id').references(() => okrs.id, { onDelete: 'set null' }),
+    /** Calendario personalizado al que pertenece esta actividad (Epic 10) */
+    calendarId: uuid('calendar_id').references(() => calendars.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
@@ -77,6 +80,8 @@ export const stepsActivities = pgTable(
     userStatusIdx: index('steps_activities_user_status_idx').on(table.userId, table.status),
     /** Area health: activities by area + completion */
     areaIdx: index('steps_activities_area_id_idx').on(table.areaId),
+    /** Reports: time by calendar */
+    calendarIdx: index('steps_activities_calendar_id_idx').on(table.calendarId),
   })
 )
 

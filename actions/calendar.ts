@@ -49,6 +49,7 @@ export async function createActivity(formData: FormData): Promise<ActionResult> 
   const time = (formData.get('time') as string | null) ?? ''
   const duration = Number(formData.get('duration') ?? 30)
   const areaId = (formData.get('areaId') as string | null) ?? ''
+  const calendarId = (formData.get('calendarId') as string | null) || null
 
   // Validate inputs
   const trimmedTitle = title.trim()
@@ -72,6 +73,7 @@ export async function createActivity(formData: FormData): Promise<ActionResult> 
       scheduledAt,
       scheduledDurationMinutes: durationMinutes,
       areaId,
+      calendarId: calendarId ?? null,
       status: 'pending',
       planned: false,
       executorType: 'human',

@@ -62,6 +62,8 @@ function makeActivity(overrides: Partial<ActivityForCalendar>): ActivityForCalen
     areaColor: 'blue',
     habitTitle: null,
     habitId: null,
+    calendarId: null,
+    calendarColor: null,
     ...overrides,
   }
 }

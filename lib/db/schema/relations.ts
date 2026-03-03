@@ -1,4 +1,5 @@
 import { relations } from 'drizzle-orm'
+import { calendars } from './calendars'
 import { areas } from './areas'
 import { areaScores } from './area-scores'
 import { okrs } from './okrs'
@@ -99,6 +100,7 @@ export const stepsActivitiesRelations = relations(stepsActivities, ({ one, many 
   area: one(areas, { fields: [stepsActivities.areaId], references: [areas.id] }),
   habit: one(habits, { fields: [stepsActivities.habitId], references: [habits.id] }),
   okr: one(okrs, { fields: [stepsActivities.okrId], references: [okrs.id] }),
+  calendar: one(calendars, { fields: [stepsActivities.calendarId], references: [calendars.id] }),
   timeEntries: many(timeEntries),
   checkinResponses: many(checkinResponses),
   skillTags: many(stepSkillTags),
@@ -177,4 +179,11 @@ export const stepSkillTagsRelations = relations(stepSkillTags, ({ one }) => ({
 // ----------------------------------------------------------------
 export const correlationsRelations = relations(correlations, () => ({
   // Polymorphic — no direct FK relations defined in Drizzle
+}))
+
+// ----------------------------------------------------------------
+// Calendars (Epic 10)
+// ----------------------------------------------------------------
+export const calendarsRelations = relations(calendars, ({ many }) => ({
+  stepsActivities: many(stepsActivities),
 }))

@@ -31,6 +31,8 @@ export interface ICalendarEvent {
   end: Date
   color?: TEventColor
   description?: string
+  calendarId?: string
+  calendarColor?: string // hex — tiene precedencia sobre color de área en la UI
 }
 
 export interface IDateRange {
@@ -45,6 +47,8 @@ interface ActivityLike {
   title: string
   scheduledAt: Date | null
   scheduledDurationMinutes: number | null
+  calendarId?: string | null
+  calendarColor?: string | null
 }
 
 // ─── Event conversion ─────────────────────────────────────────────────────────
@@ -69,6 +73,8 @@ export function toCalendarEvent(
     start,
     end,
     color,
+    ...(activity.calendarId != null && { calendarId: activity.calendarId }),
+    ...(activity.calendarColor != null && { calendarColor: activity.calendarColor }),
   }
 }
 

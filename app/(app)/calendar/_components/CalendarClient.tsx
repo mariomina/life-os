@@ -9,7 +9,7 @@
 // Story 5.2: fix timezone (getUTCHours→getHours), Time Budget panel, action buttons.
 // Story 5.8: time tracking — start/stop/pause/resume, time totals in DayView.
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   format,
@@ -37,9 +37,11 @@ import {
   getEventsForDay,
 } from '@/lib/calendar/calendar-utils'
 import { NewActivityModal } from './NewActivityModal'
+import { CalendarSidebar } from './CalendarSidebar'
 import type { AreaOption } from '@/actions/calendar'
 import { createSupabaseBrowserClient } from '@/lib/supabase/client'
 import type { Skill } from '@/lib/db/schema/skills'
+import type { Calendar } from '@/lib/db/queries/calendars'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -52,6 +54,8 @@ interface CalendarClientProps {
   events?: ICalendarEvent[]
   defaultView?: TCalendarView
   areas?: AreaOption[]
+  /** Calendars for the sidebar and activity picker (Story 10.2) */
+  calendars?: Calendar[]
   /** Record<activityId, totalSeconds> — accumulated time from completed sessions */
   timeTotals?: Record<string, number>
   /** Record<activityId, entryId> — currently active timer entry per activity */
@@ -108,6 +112,22 @@ const EVENT_COLOR_CLASSES: Record<string, string> = {
   purple: 'bg-purple-500/20 border-purple-500 text-purple-700 dark:text-purple-300',
   orange: 'bg-orange-500/20 border-orange-500 text-orange-700 dark:text-orange-300',
   gray: 'bg-gray-500/20 border-gray-500 text-gray-700 dark:text-gray-300',
+}
+
+// ─── Event color helpers (Story 10.2 AC5) ────────────────────────────────────
+
+/**
+ * Returns inline style for an event using calendarColor (hex) if available,
+ * falling back to the Tailwind class for area color.
+ * Tailwind v4 cannot generate dynamic classes, so hex colors use inline styles.
+ */
+function getEventColorStyle(calendarColor: string | undefined): React.CSSProperties | undefined {
+  if (!calendarColor) return undefined
+  return {
+    backgroundColor: `${calendarColor}33`, // 20% opacity
+    borderColor: calendarColor,
+    color: calendarColor,
+  }
 }
 
 // ─── Time Budget helpers ───────────────────────────────────────────────────────
@@ -427,14 +447,18 @@ function WeekView({ currentDate, events }: { currentDate: Date; events: ICalenda
               })
               return (
                 <div key={day.toISOString()} className="border-l border-border/50 p-0.5 relative">
-                  {dayEvents.map((evt) => (
-                    <div
-                      key={evt.id}
-                      className={`text-xs rounded border-l-2 px-1 py-0.5 mb-0.5 truncate ${EVENT_COLOR_CLASSES[evt.color ?? 'blue']}`}
-                    >
-                      {evt.title}
-                    </div>
-                  ))}
+                  {dayEvents.map((evt) => {
+                    const hexStyle = getEventColorStyle(evt.calendarColor)
+                    return (
+                      <div
+                        key={evt.id}
+                        className={`text-xs rounded border-l-2 px-1 py-0.5 mb-0.5 truncate ${hexStyle ? '' : EVENT_COLOR_CLASSES[evt.color ?? 'blue']}`}
+                        style={hexStyle}
+                      >
+                        {evt.title}
+                      </div>
+                    )
+                  })}
                 </div>
               )
             })}
@@ -487,14 +511,18 @@ function MonthView({ currentDate, events }: { currentDate: Date; events: ICalend
                 <div className="w-1 h-1 rounded-full bg-primary mx-auto mt-0.5" />
               )}
               <div className="mt-1 space-y-0.5">
-                {dayEvents.slice(0, 3).map((evt) => (
-                  <div
-                    key={evt.id}
-                    className={`text-xs rounded px-1 truncate border-l-2 ${EVENT_COLOR_CLASSES[evt.color ?? 'blue']}`}
-                  >
-                    {evt.title}
-                  </div>
-                ))}
+                {dayEvents.slice(0, 3).map((evt) => {
+                  const hexStyle = getEventColorStyle(evt.calendarColor)
+                  return (
+                    <div
+                      key={evt.id}
+                      className={`text-xs rounded px-1 truncate border-l-2 ${hexStyle ? '' : EVENT_COLOR_CLASSES[evt.color ?? 'blue']}`}
+                      style={hexStyle}
+                    >
+                      {evt.title}
+                    </div>
+                  )
+                })}
                 {dayEvents.length > 3 && (
                   <div className="text-xs text-muted-foreground">+{dayEvents.length - 3} más</div>
                 )}
@@ -577,10 +605,12 @@ function DayView({
                 const formattedTime = isRunningTimer
                   ? formatElapsed(totalForDisplay)
                   : formatSeconds(completedSeconds)
+                const hexStyle = getEventColorStyle(evt.calendarColor)
                 return (
                   <div
                     key={evt.id}
-                    className={`group text-sm rounded border-l-2 px-2 py-1 ${EVENT_COLOR_CLASSES[evt.color ?? 'blue']}`}
+                    className={`group text-sm rounded border-l-2 px-2 py-1 ${hexStyle ? '' : EVENT_COLOR_CLASSES[evt.color ?? 'blue']}`}
+                    style={hexStyle}
                   >
                     <div className="flex items-center gap-2">
                       <span className="font-medium">{evt.title}</span>
@@ -655,10 +685,12 @@ function AgendaView({ currentDate, events }: { currentDate: Date; events: ICalen
           <div className="space-y-1 pl-4">
             {dayEvents.map((evt) => {
               const durationMin = Math.round((evt.end.getTime() - evt.start.getTime()) / 60000)
+              const hexStyle = getEventColorStyle(evt.calendarColor)
               return (
                 <div
                   key={evt.id}
-                  className={`text-sm rounded border-l-2 px-3 py-1.5 flex items-center gap-3 ${EVENT_COLOR_CLASSES[evt.color ?? 'blue']}`}
+                  className={`text-sm rounded border-l-2 px-3 py-1.5 flex items-center gap-3 ${hexStyle ? '' : EVENT_COLOR_CLASSES[evt.color ?? 'blue']}`}
+                  style={hexStyle}
                 >
                   <span className="text-xs text-muted-foreground shrink-0">
                     {format(evt.start, 'HH:mm')} · {formatDuration(durationMin)}
@@ -745,6 +777,7 @@ export function CalendarClient({
   events = [],
   defaultView = 'week',
   areas = [],
+  calendars = [],
   timeTotals = {},
   initialActiveTimers = {},
   initialTimerStartedAt = {},
@@ -754,6 +787,16 @@ export function CalendarClient({
   const [view, setView] = useState<TCalendarView>(defaultView)
   const [currentDate, setCurrentDate] = useState(new Date())
   const [isModalOpen, setIsModalOpen] = useState(false)
+
+  // Story 10.2 AC3 — hidden calendars filter (state lives here, set by CalendarSidebar)
+  const [hiddenCalendarIds, setHiddenCalendarIds] = useState<Set<string>>(new Set())
+
+  // Filter events by hidden calendars
+  const visibleEvents = events.filter((e) => !e.calendarId || !hiddenCalendarIds.has(e.calendarId))
+
+  const handleVisibilityChange = useCallback((hidden: Set<string>) => {
+    setHiddenCalendarIds(new Set(hidden))
+  }, [])
 
   // Timer state: Map<activityId, TimerState> — initialized from server-side active timers
   const [activeTimers, setActiveTimers] = useState<Map<string, TimerState>>(
@@ -868,7 +911,7 @@ export function CalendarClient({
   }, [activeTimers])
 
   // Events for the currently displayed day — used by Time Budget panel (AC4)
-  const currentDayEvents = getEventsForDay(events, currentDate)
+  const currentDayEvents = getEventsForDay(visibleEvents, currentDate)
 
   function navigate(direction: 'prev' | 'next' | 'today') {
     if (direction === 'today') {
@@ -1014,106 +1057,115 @@ export function CalendarClient({
   }
 
   return (
-    <div className="flex flex-col h-full rounded-xl border border-border bg-card overflow-hidden">
-      {/* Toolbar */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-        {/* Navigation */}
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => navigate('today')}
-            className="rounded-md border border-border px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted transition-colors"
-          >
-            Hoy
-          </button>
-          <button
-            onClick={() => navigate('prev')}
-            className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-            aria-label="Anterior"
-          >
-            <ChevronLeft className="h-4 w-4" />
-          </button>
-          <button
-            onClick={() => navigate('next')}
-            className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-            aria-label="Siguiente"
-          >
-            <ChevronRight className="h-4 w-4" />
-          </button>
-          <h2 className="text-sm font-semibold text-foreground capitalize">
-            {formatDateHeader(currentDate, view)}
-          </h2>
-        </div>
+    <div className="flex h-full">
+      {/* Calendar Sidebar (Story 10.2) */}
+      {calendars.length > 0 && (
+        <CalendarSidebar calendars={calendars} onVisibilityChange={handleVisibilityChange} />
+      )}
 
-        {/* Right side: Nueva Actividad + View selector */}
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setIsModalOpen(true)}
-            aria-label="Nueva Actividad"
-            className="flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
-          >
-            <Plus className="h-3.5 w-3.5" />
-            Nueva Actividad
-          </button>
+      {/* Calendar canvas */}
+      <div className="flex flex-col flex-1 min-w-0 rounded-none border border-border bg-card overflow-hidden shadow-[0_1px_3px_rgb(0_0_0/0.06)]">
+        {/* Toolbar */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+          {/* Navigation */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => navigate('today')}
+              className="rounded-xl border border-border px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted transition-colors"
+            >
+              Hoy
+            </button>
+            <button
+              onClick={() => navigate('prev')}
+              className="rounded-xl p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+              aria-label="Anterior"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+            <button
+              onClick={() => navigate('next')}
+              className="rounded-xl p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+              aria-label="Siguiente"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
+            <h2 className="text-sm font-semibold text-foreground capitalize">
+              {formatDateHeader(currentDate, view)}
+            </h2>
+          </div>
 
-          {/* View selector */}
-          <div className="flex items-center gap-1 rounded-lg border border-border p-1">
-            {AVAILABLE_VIEWS.map((v) => (
-              <button
-                key={v}
-                onClick={() => setView(v)}
-                className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
-                  view === v
-                    ? 'bg-primary text-primary-foreground'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
-                }`}
-              >
-                {VIEW_LABELS[v]}
-              </button>
-            ))}
+          {/* Right side: Nueva Actividad + View selector */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setIsModalOpen(true)}
+              aria-label="Nueva Actividad"
+              className="flex items-center gap-1.5 rounded-xl bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Nueva Actividad
+            </button>
+
+            {/* View selector */}
+            <div className="flex items-center gap-1 rounded-lg border border-border p-1">
+              {AVAILABLE_VIEWS.map((v) => (
+                <button
+                  key={v}
+                  onClick={() => setView(v)}
+                  className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
+                    view === v
+                      ? 'bg-primary text-primary-foreground'
+                      : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                  }`}
+                >
+                  {VIEW_LABELS[v]}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
+
+        {/* Time Budget panel — only in Day view (AC4 Story 5.2) */}
+        {view === 'day' && <TimeBudgetPanel events={currentDayEvents} />}
+
+        {/* Weekly Time Budget panel — only in Week view (AC3 Story 5.3) */}
+        {view === 'week' && <WeeklyTimeBudgetPanel events={visibleEvents} />}
+
+        {/* Calendar body */}
+        <div className="flex-1 overflow-auto">
+          {view === 'week' && <WeekView currentDate={currentDate} events={visibleEvents} />}
+          {view === 'month' && <MonthView currentDate={currentDate} events={visibleEvents} />}
+          {view === 'day' && (
+            <DayView
+              currentDate={currentDate}
+              events={visibleEvents}
+              onDelete={handleDelete}
+              timeTotals={timeTotals}
+              activeTimers={activeTimers}
+              timerStartedAt={timerStartedAt}
+              elapsedTick={elapsedTick}
+              onStartTimer={handleStartTimer}
+              onStopTimer={handleStopTimer}
+              onPauseTimer={handlePauseTimer}
+              onResumeTimer={handleResumeTimer}
+              userSkills={userSkills}
+              skillTags={skillTags}
+              onTagSkill={handleTagSkill}
+              onRemoveSkillTag={handleRemoveSkillTag}
+            />
+          )}
+          {view === 'year' && <YearView currentDate={currentDate} events={visibleEvents} />}
+          {view === 'agenda' && <AgendaView currentDate={currentDate} events={visibleEvents} />}
+        </div>
+
+        {/* New Activity Modal (AC1, AC2 Story 5.7) */}
+        <NewActivityModal
+          isOpen={isModalOpen}
+          onClose={() => setIsModalOpen(false)}
+          defaultDate={currentDate}
+          areas={areas}
+          calendars={calendars}
+        />
       </div>
-
-      {/* Time Budget panel — only in Day view (AC4 Story 5.2) */}
-      {view === 'day' && <TimeBudgetPanel events={currentDayEvents} />}
-
-      {/* Weekly Time Budget panel — only in Week view (AC3 Story 5.3) */}
-      {view === 'week' && <WeeklyTimeBudgetPanel events={events} />}
-
-      {/* Calendar body */}
-      <div className="flex-1 overflow-auto">
-        {view === 'week' && <WeekView currentDate={currentDate} events={events} />}
-        {view === 'month' && <MonthView currentDate={currentDate} events={events} />}
-        {view === 'day' && (
-          <DayView
-            currentDate={currentDate}
-            events={events}
-            onDelete={handleDelete}
-            timeTotals={timeTotals}
-            activeTimers={activeTimers}
-            timerStartedAt={timerStartedAt}
-            elapsedTick={elapsedTick}
-            onStartTimer={handleStartTimer}
-            onStopTimer={handleStopTimer}
-            onPauseTimer={handlePauseTimer}
-            onResumeTimer={handleResumeTimer}
-            userSkills={userSkills}
-            skillTags={skillTags}
-            onTagSkill={handleTagSkill}
-            onRemoveSkillTag={handleRemoveSkillTag}
-          />
-        )}
-        {view === 'year' && <YearView currentDate={currentDate} events={events} />}
-        {view === 'agenda' && <AgendaView currentDate={currentDate} events={events} />}
-      </div>
-
-      {/* New Activity Modal (AC1, AC2 Story 5.7) */}
-      <NewActivityModal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        defaultDate={currentDate}
-        areas={areas}
-      />
     </div>
   )
 }

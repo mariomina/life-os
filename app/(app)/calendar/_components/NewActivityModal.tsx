@@ -9,6 +9,7 @@ import { format } from 'date-fns'
 import { X } from 'lucide-react'
 import { createActivity } from '@/actions/calendar'
 import type { AreaOption } from '@/actions/calendar'
+import type { Calendar } from '@/lib/db/queries/calendars'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -17,6 +18,8 @@ interface NewActivityModalProps {
   onClose: () => void
   defaultDate: Date
   areas: AreaOption[]
+  /** Calendars for the selector (Story 10.2 AC6) */
+  calendars?: Calendar[]
 }
 
 // ─── Duration options ─────────────────────────────────────────────────────────
@@ -32,7 +35,13 @@ const DURATION_OPTIONS = [
 
 // ─── NewActivityModal ─────────────────────────────────────────────────────────
 
-export function NewActivityModal({ isOpen, onClose, defaultDate, areas }: NewActivityModalProps) {
+export function NewActivityModal({
+  isOpen,
+  onClose,
+  defaultDate,
+  areas,
+  calendars = [],
+}: NewActivityModalProps) {
   const dialogRef = useRef<HTMLDialogElement>(null)
   const [error, setError] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
@@ -191,6 +200,28 @@ export function NewActivityModal({ isOpen, onClose, defaultDate, areas }: NewAct
             </select>
           )}
         </div>
+
+        {/* Calendar picker (Story 10.2 AC6) */}
+        {calendars.length > 0 && (
+          <div className="space-y-1">
+            <label htmlFor="calendarId" className="text-sm font-medium text-foreground">
+              Calendario
+            </label>
+            <select
+              id="calendarId"
+              name="calendarId"
+              defaultValue={calendars.find((c) => c.isDefault)?.id ?? ''}
+              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+            >
+              <option value="">Sin calendario</option>
+              {calendars.map((cal) => (
+                <option key={cal.id} value={cal.id}>
+                  {cal.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 
         {/* Error message */}
         {error && (
