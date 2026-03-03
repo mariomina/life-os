@@ -136,7 +136,7 @@ function CompactAreaScores({ areas }: { areas: Area[] }) {
         return (
           <div
             key={area.id}
-            className="flex flex-col items-center gap-1 rounded-lg border bg-card p-2 text-center"
+            className="flex flex-col items-center gap-1 rounded-2xl border bg-card p-2 text-center shadow-[0_1px_3px_rgb(0_0_0/0.06)]"
           >
             <span className="text-base">{icon}</span>
             <span className={`text-sm font-bold ${colorClass}`}>{score}%</span>
@@ -161,7 +161,7 @@ function EmptyState() {
       </p>
       <Link
         href="/onboarding"
-        className="inline-flex items-center justify-center rounded-md bg-primary px-6 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
+        className="inline-flex items-center justify-center rounded-xl bg-primary px-6 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
       >
         Completar diagnóstico
       </Link>
@@ -270,7 +270,7 @@ export default async function HomePage() {
             <Link
               key={href}
               href={href}
-              className="flex items-center gap-2 rounded-lg border bg-card px-3 py-2.5 text-sm font-medium text-foreground hover:bg-muted transition-colors"
+              className="flex items-center gap-2 rounded-2xl border bg-card px-3 py-2.5 text-sm font-medium text-foreground shadow-[0_1px_3px_rgb(0_0_0/0.06)] hover:bg-muted transition-colors"
             >
               <span>{icon}</span>
               {label}

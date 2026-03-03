@@ -74,7 +74,7 @@ export function AnnualOKRList({ annualOKRs, krs, areas, scoreHistory, year }: An
           </div>
           <button
             onClick={() => setShowForm(true)}
-            className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
+            className="inline-flex items-center justify-center rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
           >
             Crear primer OKR
           </button>
@@ -160,12 +160,12 @@ function SectionHeader({ year, activeCount, isBuffettLimitReached, onNew }: Sect
         <button
           onClick={onNew}
           disabled={isBuffettLimitReached}
-          className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-blue-500 dark:hover:bg-blue-600 transition-colors"
+          className="rounded-xl bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50 transition-colors"
         >
           + Nuevo OKR
         </button>
         {isBuffettLimitReached && (
-          <div className="absolute right-0 top-full mt-1 z-10 hidden group-hover:block w-64 rounded-md bg-gray-900 px-3 py-2 text-xs text-white shadow-lg">
+          <div className="absolute right-0 top-full mt-1 z-10 hidden group-hover:block w-64 rounded-xl bg-foreground px-3 py-2 text-xs text-background shadow-lg">
             Máx. {MAX_ANNUAL_OKRS} OKRs anuales activos — Buffett 5/25. Cancela uno antes de crear
             otro.
           </div>

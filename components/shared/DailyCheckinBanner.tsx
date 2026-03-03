@@ -192,20 +192,18 @@ export function DailyCheckinBanner({ initialActivities }: DailyCheckinBannerProp
     <section
       role="region"
       aria-label="Check-in diario"
-      className="rounded-xl border bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800 p-4 space-y-3"
+      className="rounded-2xl border border-border bg-accent p-4 space-y-3"
     >
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-sm font-semibold text-amber-900 dark:text-amber-100">
-            Check-in diario
-          </p>
+          <p className="text-sm font-semibold text-foreground">Check-in diario</p>
           {allAnswered ? (
             <p className="text-xs text-green-600 dark:text-green-400 font-medium">
               ¡Todo al día! 🎉
             </p>
           ) : (
-            <p className="text-xs text-amber-700 dark:text-amber-300">
+            <p className="text-xs text-muted-foreground">
               {pendingCount}{' '}
               {pendingCount === 1
                 ? 'actividad del ayer sin confirmar'
@@ -219,7 +217,7 @@ export function DailyCheckinBanner({ initialActivities }: DailyCheckinBannerProp
           <button
             onClick={handleBulkConfirm}
             disabled={isPending}
-            className="text-xs rounded-md bg-amber-600 px-3 py-1.5 text-white hover:bg-amber-700 disabled:opacity-50 transition-colors"
+            className="text-xs rounded-xl bg-primary px-3 py-1.5 text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
           >
             Confirmar todos los hábitos del ayer
           </button>
@@ -249,7 +247,7 @@ export function DailyCheckinBanner({ initialActivities }: DailyCheckinBannerProp
           {hasMore && (
             <button
               onClick={() => setPage((p) => p + 1)}
-              className="w-full text-xs text-amber-700 dark:text-amber-300 py-1 hover:underline"
+              className="w-full text-xs text-primary py-1 hover:underline"
             >
               Ver más ({initialActivities.length - visibleActivities.length} restantes)
             </button>

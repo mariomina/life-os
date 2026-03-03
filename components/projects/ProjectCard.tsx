@@ -3,6 +3,7 @@
 import { useState, useTransition } from 'react'
 import { Archive, FolderOpen } from 'lucide-react'
 import { archiveProject } from '@/actions/projects'
+import { Badge } from '@/components/ui/badge'
 import type { ProjectWithRelations } from '@/lib/db/queries/projects'
 
 interface ProjectCardProps {
@@ -14,13 +15,6 @@ const STATUS_LABELS: Record<string, string> = {
   completed: 'Completado',
   archived: 'Archivado',
   paused: 'Pausado',
-}
-
-const STATUS_COLORS: Record<string, string> = {
-  active: 'bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-400',
-  completed: 'bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400',
-  archived: 'bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400',
-  paused: 'bg-yellow-50 text-yellow-700 dark:bg-yellow-900/20 dark:text-yellow-400',
 }
 
 const MASLOW_GROUP_COLORS: Record<string, string> = {
@@ -53,7 +47,7 @@ export function ProjectCard({ project }: ProjectCardProps) {
   })
 
   return (
-    <div className="rounded-lg border bg-card p-4 space-y-3 transition-all duration-200 hover:shadow-sm">
+    <div className="rounded-2xl border bg-card p-4 space-y-3 shadow-[0_1px_3px_rgb(0_0_0/0.06)] transition-all duration-200 hover:shadow-sm">
       {/* Header */}
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-start gap-2 min-w-0">
@@ -67,11 +61,12 @@ export function ProjectCard({ project }: ProjectCardProps) {
             )}
           </div>
         </div>
-        <span
-          className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium shrink-0 ${STATUS_COLORS[project.status] ?? ''}`}
+        <Badge
+          variant={project.status as 'active' | 'completed' | 'archived' | 'paused'}
+          className="shrink-0"
         >
           {STATUS_LABELS[project.status] ?? project.status}
-        </span>
+        </Badge>
       </div>
 
       {/* Área + KR */}
@@ -84,7 +79,7 @@ export function ProjectCard({ project }: ProjectCardProps) {
           </span>
         )}
         {project.linkedOkr ? (
-          <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400">
+          <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium bg-secondary text-secondary-foreground">
             KR: {project.linkedOkr.title}
           </span>
         ) : (

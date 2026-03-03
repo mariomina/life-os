@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { Input } from '@/components/ui/input'
 import { isValidRrule, buildRruleString } from '@/lib/habits/occurrence-utils'
 import type { Area } from '@/lib/db/schema/areas'
 import type { Habit } from '@/lib/db/schema/habits'
@@ -96,23 +97,22 @@ export function HabitForm({
 
       {/* Title */}
       <div className="space-y-1">
-        <label className="text-xs font-medium text-foreground" htmlFor="habit-title">
+        <label className="text-sm font-medium text-foreground" htmlFor="habit-title">
           Título <span className="text-red-500">*</span>
         </label>
-        <input
+        <Input
           id="habit-title"
           type="text"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           placeholder="ej. Meditación matutina"
-          className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
           required
         />
       </div>
 
       {/* Description */}
       <div className="space-y-1">
-        <label className="text-xs font-medium text-foreground" htmlFor="habit-desc">
+        <label className="text-sm font-medium text-foreground" htmlFor="habit-desc">
           Descripción
         </label>
         <textarea
@@ -121,20 +121,20 @@ export function HabitForm({
           onChange={(e) => setDescription(e.target.value)}
           placeholder="Opcional — propósito o notas del hábito"
           rows={2}
-          className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring resize-none"
+          className="w-full rounded-xl border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring resize-none"
         />
       </div>
 
       {/* Area */}
       <div className="space-y-1">
-        <label className="text-xs font-medium text-foreground" htmlFor="habit-area">
+        <label className="text-sm font-medium text-foreground" htmlFor="habit-area">
           Área de vida <span className="text-red-500">*</span>
         </label>
         <select
           id="habit-area"
           value={areaId}
           onChange={(e) => setAreaId(e.target.value)}
-          className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+          className="w-full rounded-xl border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
           required
         >
           <option value="">Selecciona un área</option>
@@ -148,7 +148,7 @@ export function HabitForm({
 
       {/* Frequency preset */}
       <div className="space-y-2">
-        <p className="text-xs font-medium text-foreground">
+        <p className="text-sm font-medium text-foreground">
           Frecuencia <span className="text-red-500">*</span>
         </p>
         <div className="flex gap-2">
@@ -157,9 +157,9 @@ export function HabitForm({
               key={p}
               type="button"
               onClick={() => setPreset(p)}
-              className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+              className={`rounded-xl px-3 py-1.5 text-xs font-medium transition-colors ${
                 preset === p
-                  ? 'bg-blue-600 text-white dark:bg-blue-500'
+                  ? 'bg-primary text-primary-foreground'
                   : 'bg-muted text-muted-foreground hover:bg-accent hover:text-foreground'
               }`}
             >
@@ -172,13 +172,13 @@ export function HabitForm({
         {preset !== 'custom' && (
           <div className="flex items-center gap-2">
             <label className="text-xs text-muted-foreground w-24">Hora preferida</label>
-            <input
+            <Input
               type="number"
               min={0}
               max={23}
               value={hour}
               onChange={(e) => setHour(Number(e.target.value))}
-              className="w-20 rounded-md border border-input bg-background px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              className="w-20 h-8 px-2 py-1"
             />
             <span className="text-xs text-muted-foreground">:00</span>
           </div>
@@ -194,7 +194,7 @@ export function HabitForm({
                 onClick={() => toggleDay(day.value)}
                 className={`rounded-full px-2.5 py-1 text-[10px] font-medium transition-colors ${
                   selectedDays.includes(day.value)
-                    ? 'bg-blue-600 text-white dark:bg-blue-500'
+                    ? 'bg-primary text-primary-foreground'
                     : 'bg-muted text-muted-foreground hover:bg-accent hover:text-foreground'
                 }`}
               >
@@ -215,7 +215,7 @@ export function HabitForm({
                 setRruleError('')
               }}
               placeholder="FREQ=WEEKLY;BYDAY=MO,WE,FR;BYHOUR=7;BYMINUTE=0;BYSECOND=0"
-              className="w-full rounded-md border border-input bg-background px-3 py-2 text-xs font-mono placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+              className="w-full rounded-xl border border-input bg-background px-3 py-2 text-xs font-mono placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
             />
             <p className="text-[10px] text-muted-foreground">
               RFC 5545 rrule string — se validará al guardar
@@ -228,17 +228,17 @@ export function HabitForm({
 
       {/* Duration */}
       <div className="flex items-center gap-2">
-        <label className="text-xs font-medium text-foreground w-32" htmlFor="habit-duration">
+        <label className="text-sm font-medium text-foreground w-32" htmlFor="habit-duration">
           Duración (min)
         </label>
-        <input
+        <Input
           id="habit-duration"
           type="number"
           min={1}
           max={480}
           value={durationMinutes}
           onChange={(e) => setDurationMinutes(Number(e.target.value))}
-          className="w-20 rounded-md border border-input bg-background px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+          className="w-20 h-8 px-2 py-1"
         />
       </div>
 
@@ -248,14 +248,14 @@ export function HabitForm({
           type="button"
           onClick={onCancel}
           disabled={isLoading}
-          className="rounded-md px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
+          className="rounded-xl px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
         >
           Cancelar
         </button>
         <button
           type="submit"
           disabled={isLoading}
-          className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors disabled:opacity-50 dark:bg-blue-500 dark:hover:bg-blue-600"
+          className="rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
         >
           {isLoading ? 'Guardando…' : submitLabel}
         </button>

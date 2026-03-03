@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { Input } from '@/components/ui/input'
 import type { Area } from '@/lib/db/schema/areas'
 import type { OKR } from '@/lib/db/schema/okrs'
 
@@ -75,7 +76,7 @@ export function ProjectForm({
         <label htmlFor="project-title" className="block text-sm font-medium text-foreground">
           Título <span className="text-red-500">*</span>
         </label>
-        <input
+        <Input
           id="project-title"
           type="text"
           value={title}
@@ -84,7 +85,6 @@ export function ProjectForm({
             if (e.target.value.trim()) setErrors((prev) => ({ ...prev, title: undefined }))
           }}
           placeholder="Ej: Lanzar producto MVP"
-          className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
         />
         {errors.title && <p className="text-xs text-red-500">{errors.title}</p>}
       </div>
@@ -100,7 +100,7 @@ export function ProjectForm({
           onChange={(e) => setDescription(e.target.value)}
           placeholder="¿Qué quieres lograr con este proyecto?"
           rows={2}
-          className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring resize-none"
+          className="w-full rounded-xl border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring resize-none"
         />
       </div>
 
@@ -117,7 +117,7 @@ export function ProjectForm({
             setOkrId('') // reset KR al cambiar área
             if (e.target.value) setErrors((prev) => ({ ...prev, areaId: undefined }))
           }}
-          className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+          className="w-full rounded-xl border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
         >
           <option value="">Selecciona un área</option>
           <optgroup label="D-Needs (Niveles 1-4)">
@@ -152,7 +152,7 @@ export function ProjectForm({
           value={okrId}
           onChange={(e) => setOkrId(e.target.value)}
           disabled={!areaId}
-          className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
+          className="w-full rounded-xl border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
         >
           <option value="">
             {!areaId
@@ -186,7 +186,7 @@ export function ProjectForm({
         <button
           type="submit"
           disabled={isLoading}
-          className="rounded-md bg-blue-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors dark:bg-blue-500 dark:hover:bg-blue-600"
+          className="rounded-xl bg-primary px-4 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
           {isLoading ? 'Guardando...' : submitLabel}
         </button>

@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from 'react'
 import { Archive, Trash2, Flame } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
 import { archiveHabit, deleteHabit } from '@/actions/habits'
 import { describeRrule } from '@/lib/habits/occurrence-utils'
 import type { Habit } from '@/lib/db/schema/habits'
@@ -50,7 +51,7 @@ export function HabitCard({ habit, onEdit }: HabitCardProps) {
 
   return (
     <div
-      className={`rounded-lg border bg-card p-4 space-y-3 transition-all duration-200 hover:shadow-sm ${
+      className={`rounded-2xl border bg-card p-4 space-y-3 shadow-[0_1px_3px_rgb(0_0_0/0.06)] transition-all duration-200 hover:shadow-sm ${
         !habit.isActive ? 'opacity-60' : ''
       }`}
     >
@@ -62,21 +63,15 @@ export function HabitCard({ habit, onEdit }: HabitCardProps) {
             <p className="text-xs text-muted-foreground line-clamp-2 mt-0.5">{habit.description}</p>
           )}
         </div>
-        <span
-          className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium shrink-0 ${
-            habit.isActive
-              ? 'bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-400'
-              : 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400'
-          }`}
-        >
+        <Badge variant={habit.isActive ? 'active' : 'archived'} className="shrink-0">
           {habit.isActive ? 'Activo' : 'Inactivo'}
-        </span>
+        </Badge>
       </div>
 
       {/* Metadata */}
       <div className="flex flex-wrap gap-1.5">
         {habit.areaName && (
-          <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400">
+          <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium bg-secondary text-secondary-foreground">
             {habit.areaName}
           </span>
         )}

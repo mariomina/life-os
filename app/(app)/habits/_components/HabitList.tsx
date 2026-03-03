@@ -80,7 +80,7 @@ export function HabitList({ habits: initialHabits, areas }: HabitListProps) {
         {!showCreateForm && !editingHabit && (
           <button
             onClick={() => setShowCreateForm(true)}
-            className="flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors dark:bg-blue-500 dark:hover:bg-blue-600"
+            className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
           >
             <Plus className="w-4 h-4" />
             Nuevo Hábito
@@ -90,7 +90,7 @@ export function HabitList({ habits: initialHabits, areas }: HabitListProps) {
 
       {/* Create form */}
       {showCreateForm && (
-        <div className="rounded-lg border bg-card p-4 shadow-md space-y-4 animate-in fade-in duration-200">
+        <div className="rounded-2xl border border-border bg-card p-4 shadow-[0_1px_3px_rgb(0_0_0/0.06)] space-y-4 animate-in fade-in duration-200">
           <h3 className="text-sm font-bold uppercase tracking-wider text-foreground">
             Nuevo Hábito
           </h3>
@@ -106,7 +106,7 @@ export function HabitList({ habits: initialHabits, areas }: HabitListProps) {
 
       {/* Edit form */}
       {editingHabit && (
-        <div className="rounded-lg border bg-card p-4 shadow-md space-y-4 animate-in fade-in duration-200">
+        <div className="rounded-2xl border border-border bg-card p-4 shadow-[0_1px_3px_rgb(0_0_0/0.06)] space-y-4 animate-in fade-in duration-200">
           <h3 className="text-sm font-bold uppercase tracking-wider text-foreground">
             Editar Hábito
           </h3>

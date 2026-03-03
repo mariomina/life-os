@@ -62,7 +62,7 @@ export function KRForm({ parentId, year, onSubmit }: KRFormProps) {
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           placeholder="Ej: Meditar 50 horas en el trimestre"
-          className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-900 text-foreground"
+          className="w-full rounded-xl border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring text-foreground"
           required
         />
       </div>
@@ -77,7 +77,7 @@ export function KRForm({ parentId, year, onSubmit }: KRFormProps) {
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           placeholder="Detalles sobre cómo medir este KR..."
-          className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-900 text-foreground"
+          className="w-full rounded-xl border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring text-foreground"
           rows={2}
         />
       </div>
@@ -92,7 +92,7 @@ export function KRForm({ parentId, year, onSubmit }: KRFormProps) {
             id="kr-quarter"
             value={quarter}
             onChange={(e) => setQuarter(e.target.value as 'Q1' | 'Q2' | 'Q3' | 'Q4')}
-            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-900 text-foreground"
+            className="w-full rounded-xl border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring text-foreground"
             required
           >
             <option value="Q1">Q1 (Ene-Mar)</option>
@@ -113,7 +113,7 @@ export function KRForm({ parentId, year, onSubmit }: KRFormProps) {
             onChange={(e) =>
               setKrType(e.target.value as 'time_based' | 'outcome_based' | 'milestone')
             }
-            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-900 text-foreground"
+            className="w-full rounded-xl border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring text-foreground"
             required
           >
             <option value="time_based">Tiempo (Horas)</option>
@@ -136,7 +136,7 @@ export function KRForm({ parentId, year, onSubmit }: KRFormProps) {
               value={targetValue}
               onChange={(e) => setTargetValue(Number(e.target.value))}
               min={0}
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-900 text-foreground"
+              className="w-full rounded-xl border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring text-foreground"
               required
             />
           </div>
@@ -153,7 +153,7 @@ export function KRForm({ parentId, year, onSubmit }: KRFormProps) {
                 value={targetUnit}
                 onChange={(e) => setTargetUnit(e.target.value)}
                 placeholder="Unidad..."
-                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-900 text-foreground"
+                className="w-full rounded-xl border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring text-foreground"
               />
             </div>
           )}
@@ -164,7 +164,7 @@ export function KRForm({ parentId, year, onSubmit }: KRFormProps) {
       <button
         type="submit"
         disabled={!canSubmit}
-        className="w-full rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-blue-500 dark:hover:bg-blue-600 transition-colors"
+        className="w-full rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50 transition-colors"
       >
         Crear Key Result
       </button>

@@ -18,6 +18,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   } = await supabase.auth.getUser()
 
   const pendingInboxCount = user ? await getPendingInboxCount(user.id) : 0
+  const userName = (user?.user_metadata?.full_name as string | undefined) ?? undefined
+  const userEmail = user?.email ?? undefined
 
-  return <AppShell pendingInboxCount={pendingInboxCount}>{children}</AppShell>
+  return (
+    <AppShell pendingInboxCount={pendingInboxCount} userName={userName} userEmail={userEmail}>
+      {children}
+    </AppShell>
+  )
 }

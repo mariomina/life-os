@@ -50,19 +50,17 @@ export function EmergentHabitBanner({ suggestedTitle, onCreateHabit }: EmergentH
       role="alert"
       className="fixed bottom-6 right-6 z-50 flex items-start gap-3 rounded-xl border bg-card shadow-lg p-4 max-w-sm animate-in slide-in-from-bottom-4 duration-300"
     >
-      <Sparkles className="w-5 h-5 text-blue-500 mt-0.5 shrink-0" />
+      <Sparkles className="w-5 h-5 text-primary mt-0.5 shrink-0" />
       <div className="flex-1 min-w-0 space-y-2">
         <p className="text-sm font-medium text-foreground">
           Pareces repetir{' '}
-          <span className="font-semibold text-blue-600 dark:text-blue-400">
-            &ldquo;{suggestedTitle}&rdquo;
-          </span>{' '}
+          <span className="font-semibold text-primary">&ldquo;{suggestedTitle}&rdquo;</span>{' '}
           frecuentemente. ¿Quieres convertirlo en un hábito?
         </p>
         <div className="flex gap-2">
           <button
             onClick={handleCreate}
-            className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 transition-colors dark:bg-blue-500 dark:hover:bg-blue-600"
+            className="rounded-xl bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
           >
             Crear hábito
           </button>

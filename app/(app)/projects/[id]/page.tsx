@@ -7,19 +7,13 @@ import { getProjectById } from '@/lib/db/queries/projects'
 import { getKRsByYear } from '@/lib/db/queries/okrs'
 import { ProjectEditInline } from '@/components/projects/ProjectEditInline'
 import { ProjectArchiveButton } from '@/components/projects/ProjectArchiveButton'
+import { Badge } from '@/components/ui/badge'
 
 const STATUS_LABELS: Record<string, string> = {
   active: 'Activo',
   completed: 'Completado',
   archived: 'Archivado',
   paused: 'Pausado',
-}
-
-const STATUS_COLORS: Record<string, string> = {
-  active: 'bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-400',
-  completed: 'bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400',
-  archived: 'bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400',
-  paused: 'bg-yellow-50 text-yellow-700 dark:bg-yellow-900/20 dark:text-yellow-400',
 }
 
 /**
@@ -76,11 +70,9 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
         <div className="space-y-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <h1 className="text-2xl font-bold text-foreground truncate">{project.title}</h1>
-            <span
-              className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_COLORS[project.status] ?? ''}`}
-            >
+            <Badge variant={project.status as 'active' | 'completed' | 'archived' | 'paused'}>
               {STATUS_LABELS[project.status] ?? project.status}
-            </span>
+            </Badge>
           </div>
           {project.description && (
             <p className="text-sm text-muted-foreground">{project.description}</p>
@@ -89,7 +81,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
       </section>
 
       {/* Detalles */}
-      <section className="rounded-lg border bg-card p-5 space-y-4">
+      <section className="rounded-2xl border border-border bg-card p-5 space-y-4">
         <h2 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
           Detalles
         </h2>
@@ -140,12 +132,12 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
       </section>
 
       {/* Editar */}
-      <section className="rounded-lg border bg-card p-5 space-y-4">
+      <section className="rounded-2xl border border-border bg-card p-5 space-y-4">
         <ProjectEditInline project={project} areas={userAreas} allKrs={allKrs} />
       </section>
 
       {/* Workflow */}
-      <section className="rounded-lg border bg-card p-5 space-y-3">
+      <section className="rounded-2xl border border-border bg-card p-5 space-y-3">
         <h2 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
           Workflow
         </h2>
@@ -154,7 +146,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
         </p>
         <Link
           href={`/projects/${project.id}/workflow`}
-          className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
+          className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
         >
           Ver Workflow
         </Link>
@@ -162,7 +154,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
 
       {/* Zona peligrosa */}
       {project.status !== 'archived' && (
-        <section className="rounded-lg border border-dashed border-red-200 dark:border-red-800 p-4 flex items-center justify-between">
+        <section className="rounded-2xl border border-dashed border-destructive/30 p-4 flex items-center justify-between">
           <div>
             <p className="text-sm font-medium text-foreground">Archivar proyecto</p>
             <p className="text-xs text-muted-foreground">

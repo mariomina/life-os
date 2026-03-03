@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { HierarchyWarning } from '@/components/shared/HierarchyWarning'
 import { OKRImpactBadge } from '@/components/okrs/OKRImpactBadge'
+import { Input } from '@/components/ui/input'
 import { checkHierarchyBlock } from '@/features/maslow/hierarchy-guard'
 import { calculateOKRImpact, buildScoreMap } from '@/features/maslow/okr-impact'
 import type { Area } from '@/lib/db/schema/areas'
@@ -66,13 +67,12 @@ export function OKRForm({ areas, scoreHistory, onSubmit }: OKRFormProps) {
         <label htmlFor="okr-title" className="block text-sm font-medium">
           Título del OKR
         </label>
-        <input
+        <Input
           id="okr-title"
           type="text"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           placeholder="Ej: Alcanzar independencia financiera"
-          className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-900"
           required
         />
       </div>
@@ -86,7 +86,7 @@ export function OKRForm({ areas, scoreHistory, onSubmit }: OKRFormProps) {
           id="okr-area"
           value={areaId}
           onChange={(e) => setAreaId(e.target.value)}
-          className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-900"
+          className="w-full rounded-xl border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
           required
         >
           <option value="">Selecciona un área</option>
@@ -100,7 +100,7 @@ export function OKRForm({ areas, scoreHistory, onSubmit }: OKRFormProps) {
         {/* OKR Impact Score badge — shown when an area is selected */}
         {impactResult && impactResult.deltaPoints > 0 && (
           <div className="mt-1 flex items-center gap-1.5">
-            <span className="text-xs text-gray-500 dark:text-gray-400">Impacto estimado:</span>
+            <span className="text-xs text-muted-foreground">Impacto estimado:</span>
             <OKRImpactBadge result={impactResult} />
           </div>
         )}
@@ -111,14 +111,13 @@ export function OKRForm({ areas, scoreHistory, onSubmit }: OKRFormProps) {
         <label htmlFor="okr-year" className="block text-sm font-medium">
           Año
         </label>
-        <input
+        <Input
           id="okr-year"
           type="number"
           value={year}
           onChange={(e) => setYear(Number(e.target.value))}
           min={currentYear}
           max={currentYear + 5}
-          className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-900"
           required
         />
       </div>
@@ -127,7 +126,7 @@ export function OKRForm({ areas, scoreHistory, onSubmit }: OKRFormProps) {
       <button
         type="submit"
         disabled={!canSubmit}
-        className="w-full rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-blue-500 dark:hover:bg-blue-600"
+        className="w-full rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50 transition-colors"
       >
         {isBlocked ? 'Bloqueado — resuelve la crisis D-Needs primero' : 'Crear OKR'}
       </button>

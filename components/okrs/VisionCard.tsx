@@ -60,7 +60,7 @@ export function VisionCard({ vision }: VisionCardProps) {
         </div>
         <button
           onClick={() => setIsEditing(true)}
-          className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
+          className="inline-flex items-center justify-center rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
         >
           Define tu visión de 5 años
         </button>
@@ -85,7 +85,7 @@ export function VisionCard({ vision }: VisionCardProps) {
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             placeholder="Ej: Libertad financiera y salud óptima para mi familia"
-            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-900"
+            className="w-full rounded-xl border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
           />
         </div>
 
@@ -99,7 +99,7 @@ export function VisionCard({ vision }: VisionCardProps) {
             onChange={(e) => setDescription(e.target.value)}
             rows={4}
             placeholder="Describe en detalle cómo será tu vida en 5 años..."
-            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-900 resize-none"
+            className="w-full rounded-xl border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring resize-none"
           />
         </div>
 
@@ -110,7 +110,7 @@ export function VisionCard({ vision }: VisionCardProps) {
             <button
               onClick={handleCancel}
               disabled={isPending}
-              className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:hover:bg-gray-800 transition-colors"
+              className="rounded-xl border border-input px-4 py-2 text-sm font-medium hover:bg-muted disabled:opacity-50 transition-colors"
             >
               Cancelar
             </button>
@@ -118,7 +118,7 @@ export function VisionCard({ vision }: VisionCardProps) {
           <button
             onClick={handleSave}
             disabled={isPending || !title.trim()}
-            className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-blue-500 dark:hover:bg-blue-600 transition-colors"
+            className="rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50 transition-colors"
           >
             {isPending ? 'Guardando...' : 'Guardar visión'}
           </button>

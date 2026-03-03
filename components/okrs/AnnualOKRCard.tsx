@@ -7,6 +7,7 @@ import { KRForm } from '@/components/okrs/KRForm'
 import { createKR, deleteOKR, confirmMilestone } from '@/actions/okrs'
 import type { CreateKRData } from '@/actions/okrs'
 import { calculateOKRImpact, buildScoreMap } from '@/features/maslow/okr-impact'
+import { Badge } from '@/components/ui/badge'
 import type { OKR } from '@/lib/db/schema/okrs'
 import type { Area } from '@/lib/db/schema/areas'
 
@@ -21,13 +22,6 @@ const STATUS_LABELS: Record<string, string> = {
   completed: 'Completado',
   cancelled: 'Cancelado',
   paused: 'Pausado',
-}
-
-const STATUS_COLORS: Record<string, string> = {
-  active: 'bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-400',
-  completed: 'bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400',
-  cancelled: 'bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400',
-  paused: 'bg-yellow-50 text-yellow-700 dark:bg-yellow-900/20 dark:text-yellow-400',
 }
 
 const KR_TYPE_ICONS = {
@@ -74,7 +68,7 @@ export function AnnualOKRCard({ okr, areas, krs }: AnnualOKRCardProps) {
   }
 
   return (
-    <div className="rounded-lg border bg-card overflow-hidden transition-all duration-200">
+    <div className="rounded-2xl border bg-card overflow-hidden shadow-[0_1px_3px_rgb(0_0_0/0.06)] transition-all duration-200">
       {/* Header / Annual OKR Info */}
       <div
         className="p-4 cursor-pointer hover:bg-muted/50 transition-colors"
@@ -102,11 +96,9 @@ export function AnnualOKRCard({ okr, areas, krs }: AnnualOKRCardProps) {
             {impactResult && impactResult.deltaPoints > 0 && (
               <OKRImpactBadge result={impactResult} />
             )}
-            <span
-              className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_COLORS[okr.status] ?? ''}`}
-            >
+            <Badge variant={okr.status as 'active' | 'completed' | 'paused' | 'cancelled'}>
               {STATUS_LABELS[okr.status] ?? okr.status}
-            </span>
+            </Badge>
           </div>
         </div>
 
@@ -118,7 +110,7 @@ export function AnnualOKRCard({ okr, areas, krs }: AnnualOKRCardProps) {
           </div>
           <div className="w-full bg-muted rounded-full h-1.5">
             <div
-              className="h-1.5 rounded-full bg-blue-500 transition-all duration-500"
+              className="h-1.5 rounded-full bg-primary transition-all duration-500"
               style={{ width: `${okr.progress}%` }}
             />
           </div>
@@ -137,7 +129,7 @@ export function AnnualOKRCard({ okr, areas, krs }: AnnualOKRCardProps) {
                 e.stopPropagation()
                 setShowKRForm(!showKRForm)
               }}
-              className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-blue-600 hover:text-blue-700 transition-colors"
+              className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-primary hover:text-primary/90 transition-colors"
             >
               <Plus className="w-3 h-3" />
               Nuevo KR
@@ -152,10 +144,10 @@ export function AnnualOKRCard({ okr, areas, krs }: AnnualOKRCardProps) {
               </p>
             ) : (
               krs.map((kr) => (
-                <div key={kr.id} className="bg-card rounded-md border p-3 shadow-sm space-y-2">
+                <div key={kr.id} className="bg-card rounded-xl border p-3 shadow-sm space-y-2">
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex gap-2 min-w-0">
-                      <div className="mt-0.5 text-blue-500">
+                      <div className="mt-0.5 text-primary">
                         {KR_TYPE_ICONS[kr.krType as key_result_type] ?? (
                           <Flag className="w-3.5 h-3.5" />
                         )}
@@ -208,7 +200,7 @@ export function AnnualOKRCard({ okr, areas, krs }: AnnualOKRCardProps) {
 
           {/* New KR Form */}
           {showKRForm && (
-            <div className="bg-card rounded-md border p-4 shadow-md space-y-4 animate-in zoom-in-95 duration-200">
+            <div className="bg-card rounded-xl border p-4 shadow-md space-y-4 animate-in zoom-in-95 duration-200">
               <div className="flex items-center justify-between">
                 <h5 className="text-xs font-bold uppercase tracking-wider">Nuevo KR Trimestral</h5>
                 <button

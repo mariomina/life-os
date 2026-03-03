@@ -70,7 +70,7 @@ export default async function ProjectsPage({
             href={`/projects?status=${tab.status}`}
             className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
               activeTab === tab.status
-                ? 'border-blue-600 text-blue-600 dark:border-blue-400 dark:text-blue-400'
+                ? 'border-primary text-primary'
                 : 'border-transparent text-muted-foreground hover:text-foreground hover:border-border'
             }`}
           >

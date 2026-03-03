@@ -22,13 +22,16 @@ interface NavItem {
   icon: React.ComponentType<{ className?: string }>
 }
 
-const navItems: NavItem[] = [
+const menuItems: NavItem[] = [
   { href: '/', label: 'Home', icon: LayoutDashboard },
   { href: '/areas', label: 'Áreas de Vida', icon: Grid3X3 },
   { href: '/okrs', label: 'OKRs', icon: Target },
   { href: '/projects', label: 'Proyectos', icon: FolderOpen },
   { href: '/calendar', label: 'Calendario', icon: Calendar },
   { href: '/inbox', label: 'Inbox', icon: Inbox },
+]
+
+const toolItems: NavItem[] = [
   { href: '/habits', label: 'Hábitos', icon: CheckSquare },
   { href: '/skills', label: 'Habilidades', icon: Star },
   { href: '/reports', label: 'Informes', icon: BarChart3 },
@@ -44,6 +47,14 @@ interface SidebarProps {
 export function Sidebar({ isOpen, onToggle, pendingInboxCount = 0 }: SidebarProps) {
   const pathname = usePathname()
 
+  const isActive = (href: string) =>
+    pathname === href || (href !== '/' && pathname.startsWith(href))
+
+  const navItemClass = (href: string) =>
+    isActive(href)
+      ? 'flex items-center gap-3 mx-2 px-3 py-2 rounded-lg text-sm font-semibold bg-accent text-sidebar-primary transition-colors'
+      : 'flex items-center gap-3 mx-2 px-3 py-2 rounded-lg text-sm font-medium text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors'
+
   return (
     <>
       {/* Mobile overlay */}
@@ -57,23 +68,23 @@ export function Sidebar({ isOpen, onToggle, pendingInboxCount = 0 }: SidebarProp
 
       <aside
         className={[
-          'fixed left-0 top-0 z-40 h-screen flex-col bg-[#1c2434] dark:bg-[#24303f]',
+          'fixed left-0 top-0 z-40 h-screen flex-col bg-white border-r border-border',
           'sidebar-transition overflow-hidden',
           isOpen ? 'w-64 flex' : 'w-0 flex',
         ].join(' ')}
       >
         {/* Logo */}
-        <div className="flex h-16 items-center justify-between px-6 border-b border-white/10">
+        <div className="flex h-16 items-center justify-between px-4 border-b border-border">
           <Link href="/" className="flex items-center gap-2">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
-              <span className="text-sm font-bold text-white">L</span>
+              <span className="text-sm font-bold text-primary-foreground">L</span>
             </div>
-            <span className="text-lg font-semibold text-white">life-os</span>
+            <span className="text-lg font-semibold text-foreground">life-os</span>
           </Link>
           {/* Collapse button — desktop only */}
           <button
             onClick={onToggle}
-            className="hidden xl:flex h-8 w-8 items-center justify-center rounded-full text-[#adb7be] hover:bg-white/10 hover:text-white transition-colors"
+            className="hidden xl:flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
             aria-label="Colapsar sidebar"
           >
             <ChevronLeft className="h-4 w-4" />
@@ -81,27 +92,21 @@ export function Sidebar({ isOpen, onToggle, pendingInboxCount = 0 }: SidebarProp
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 overflow-y-auto px-4 py-4">
-          <ul className="space-y-1">
-            {navItems.map((item) => {
-              const isActive =
-                pathname === item.href || (item.href !== '/' && pathname.startsWith(item.href))
+        <nav className="flex-1 overflow-y-auto py-2">
+          {/* Section: MENÚ */}
+          <p className="px-4 pt-4 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            Menú
+          </p>
+          <ul>
+            {menuItems.map((item) => {
               const showBadge = item.href === '/inbox' && pendingInboxCount > 0
               return (
                 <li key={item.href}>
-                  <Link
-                    href={item.href}
-                    className={[
-                      'flex items-center gap-3 rounded-lg px-4 py-2.5 text-sm font-medium transition-colors',
-                      isActive
-                        ? 'bg-white/10 text-white'
-                        : 'text-[#adb7be] hover:bg-white/5 hover:text-white',
-                    ].join(' ')}
-                  >
-                    <item.icon className="h-5 w-5 flex-shrink-0" />
+                  <Link href={item.href} className={navItemClass(item.href)}>
+                    <item.icon className="h-4 w-4 flex-shrink-0" />
                     <span className="flex-1">{item.label}</span>
                     {showBadge && (
-                      <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-xs font-bold text-primary-foreground">
+                      <span className="ml-auto rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-bold text-primary-foreground">
                         {pendingInboxCount > 99 ? '99+' : pendingInboxCount}
                       </span>
                     )}
@@ -110,11 +115,26 @@ export function Sidebar({ isOpen, onToggle, pendingInboxCount = 0 }: SidebarProp
               )
             })}
           </ul>
+
+          {/* Section: HERRAMIENTAS */}
+          <p className="px-4 pt-4 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            Herramientas
+          </p>
+          <ul>
+            {toolItems.map((item) => (
+              <li key={item.href}>
+                <Link href={item.href} className={navItemClass(item.href)}>
+                  <item.icon className="h-4 w-4 flex-shrink-0" />
+                  <span className="flex-1">{item.label}</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
         </nav>
 
         {/* Footer */}
-        <div className="border-t border-white/10 px-6 py-4">
-          <p className="text-xs text-[#adb7be]">life-os v0.1.0</p>
+        <div className="border-t border-border px-4 py-4">
+          <p className="text-xs text-muted-foreground">life-os v0.1.0</p>
         </div>
       </aside>
     </>
