@@ -360,3 +360,52 @@ describe('describeRecurrence — custom type', () => {
     expect(result).toMatch(/festivos/)
   })
 })
+
+// ─── weekdays shortcut (tipo directo Lun-Vi) ──────────────────────────────────
+
+describe('weekdays recurrence', () => {
+  it('count=5 returns only Mon-Fri dates', () => {
+    const result = generateOccurrences(BASE_DATE, makeOpts({ type: 'weekdays', count: 5 }))
+    expect(result).toHaveLength(5)
+    for (const date of result) {
+      const day = date.getDay() // 0=Sun, 6=Sat
+      expect(day).toBeGreaterThanOrEqual(1)
+      expect(day).toBeLessThanOrEqual(5)
+    }
+  })
+
+  it('count=10 returns exactly 10 Mon-Fri dates', () => {
+    const result = generateOccurrences(BASE_DATE, makeOpts({ type: 'weekdays', count: 10 }))
+    expect(result).toHaveLength(10)
+    for (const date of result) {
+      const day = date.getDay()
+      expect(day).toBeGreaterThanOrEqual(1)
+      expect(day).toBeLessThanOrEqual(5)
+    }
+  })
+
+  it('preserves the hour and minute of the start date', () => {
+    const start = new Date('2026-03-09T08:30:00') // Monday
+    const result = generateOccurrences(start, makeOpts({ type: 'weekdays', count: 3 }))
+    for (const date of result) {
+      expect(date.getHours()).toBe(8)
+      expect(date.getMinutes()).toBe(30)
+    }
+  })
+
+  it('starting on Friday only includes Fri then skips to Mon', () => {
+    // 2026-03-13 is a Friday
+    const friday = new Date('2026-03-13T09:00:00')
+    const result = generateOccurrences(friday, makeOpts({ type: 'weekdays', count: 3 }))
+    expect(result).toHaveLength(3)
+    expect(result[0].getDay()).toBe(5) // Fri
+    expect(result[1].getDay()).toBe(1) // Mon (skip Sat/Sun)
+    expect(result[2].getDay()).toBe(2) // Tue
+  })
+
+  it('describeRecurrence returns readable text with "hábiles"', () => {
+    const result = describeRecurrence(makeOpts({ type: 'weekdays', count: 5 }), BASE_DATE)
+    expect(result).toMatch(/5/)
+    expect(result).toMatch(/hábiles/)
+  })
+})

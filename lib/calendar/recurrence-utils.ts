@@ -5,12 +5,19 @@
  * Story 10.5: yearly
  * Story 10.6: workdays + filtrado de festivos
  * Story 10.7: tipo 'custom' — intervalo, días de semana seleccionables y
- *             opción de excluir festivos. Reemplaza 'weekdays' y 'workdays'.
+ *             opción de excluir festivos. Restaura 'weekdays' como acceso rápido.
  */
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export type RecurrenceType = 'none' | 'daily' | 'weekly' | 'monthly' | 'yearly' | 'custom'
+export type RecurrenceType =
+  | 'none'
+  | 'daily'
+  | 'weekly'
+  | 'weekdays'
+  | 'monthly'
+  | 'yearly'
+  | 'custom'
 
 export type RecurrenceUnit = 'day' | 'week' | 'month' | 'year'
 
@@ -39,6 +46,7 @@ export const RECURRENCE_DEFAULTS: Record<RecurrenceType, number> = {
   none: 1,
   daily: 30,
   weekly: 8,
+  weekdays: 20,
   monthly: 3,
   yearly: 3,
   custom: 13,
@@ -49,9 +57,10 @@ const MAX_OCCURRENCES: Record<RecurrenceType, number> = {
   none: 1,
   daily: 365,
   weekly: 52,
+  weekdays: 260, // ~1 año de días hábiles
   monthly: 12,
   yearly: 10,
-  custom: 260, // ~1 año de días hábiles
+  custom: 260,
 }
 
 // ─── Core generators ──────────────────────────────────────────────────────────
@@ -174,6 +183,11 @@ export function generateOccurrences(start: Date, options: RecurrenceOptions): Da
   const endDate =
     options.endType === 'date' && options.endDate ? new Date(options.endDate + 'T23:59:59') : null
 
+  // 'weekdays' — atajo directo para Lun-Vie (sin configuración extra)
+  if (options.type === 'weekdays') {
+    return generateWeeklyWithDays(start, 1, [1, 2, 3, 4, 5], endDate, limit)
+  }
+
   // Tipos simples — intervalo fijo de 1 unidad
   const simpleUnitMap: Partial<Record<RecurrenceType, RecurrenceUnit>> = {
     daily: 'day',
@@ -204,6 +218,7 @@ const DAY_ABBR = ['Do', 'Lu', 'Ma', 'Mi', 'Ju', 'Vi', 'Sá']
 const SIMPLE_TYPE_LABELS: Partial<Record<RecurrenceType, string>> = {
   daily: 'cada día',
   weekly: 'cada semana',
+  weekdays: 'días hábiles (Lun-Vi)',
   monthly: 'cada mes',
   yearly: 'cada año',
 }
@@ -269,5 +284,6 @@ export const RECURRENCE_LABELS: Record<RecurrenceType, string> = {
   weekly: 'Cada semana',
   monthly: 'Cada mes',
   yearly: 'Cada año',
+  weekdays: 'Todos los días hábiles (Lun-Vi)',
   custom: 'Personalizado...',
 }
