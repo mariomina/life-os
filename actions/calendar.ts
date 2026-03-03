@@ -4,6 +4,7 @@
 // Server Actions para CRUD de actividades en el Calendario.
 // Crea y elimina entradas en steps_activities; obtiene áreas del usuario.
 // Story 5.7 — CRUD Eventos desde el Calendario.
+// Story 10.4 — Recurrencia: crea múltiples ocurrencias agrupadas por recurrenceGroupId.
 
 import { eq, and, asc } from 'drizzle-orm'
 import { revalidatePath } from 'next/cache'
@@ -11,6 +12,11 @@ import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { db, assertDatabaseUrl } from '@/lib/db/client'
 import { stepsActivities } from '@/lib/db/schema/steps-activities'
 import { areas } from '@/lib/db/schema/areas'
+import {
+  generateOccurrences,
+  type RecurrenceType,
+  type RecurrenceOptions,
+} from '@/lib/calendar/recurrence-utils'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -42,6 +48,9 @@ async function getAuthenticatedUserId(): Promise<string> {
 /**
  * Creates a spontaneous (non-planned) activity in the calendar.
  * Validates title, date/time, and areaId before inserting.
+ *
+ * Story 10.4: si recurrenceType !== 'none', genera múltiples ocurrencias
+ * agrupadas por recurrenceGroupId (UUID compartido).
  */
 export async function createActivity(formData: FormData): Promise<ActionResult> {
   const title = (formData.get('title') as string | null) ?? ''
@@ -50,6 +59,15 @@ export async function createActivity(formData: FormData): Promise<ActionResult> 
   const duration = Number(formData.get('duration') ?? 30)
   const areaId = (formData.get('areaId') as string | null) ?? ''
   const calendarId = (formData.get('calendarId') as string | null) || null
+
+  // Recurrence fields
+  const recurrenceType = ((formData.get('recurrenceType') as string | null) ??
+    'none') as RecurrenceType
+  const recurrenceEndType = ((formData.get('recurrenceEndType') as string | null) ?? 'count') as
+    | 'count'
+    | 'date'
+  const recurrenceCount = Math.max(1, Number(formData.get('recurrenceCount') ?? 1))
+  const recurrenceEndDate = (formData.get('recurrenceEndDate') as string | null) ?? ''
 
   // Validate inputs
   const trimmedTitle = title.trim()
@@ -67,19 +85,42 @@ export async function createActivity(formData: FormData): Promise<ActionResult> 
     assertDatabaseUrl()
     const userId = await getAuthenticatedUserId()
 
-    await db.insert(stepsActivities).values({
+    const baseFields = {
       userId,
       title: trimmedTitle,
-      scheduledAt,
       scheduledDurationMinutes: durationMinutes,
       areaId,
       calendarId: calendarId ?? null,
-      status: 'pending',
+      status: 'pending' as const,
       planned: false,
-      executorType: 'human',
-    })
+      executorType: 'human' as const,
+    }
+
+    if (recurrenceType === 'none') {
+      // Actividad simple — comportamiento original
+      await db.insert(stepsActivities).values({ ...baseFields, scheduledAt })
+    } else {
+      // Actividad recurrente — genera todas las ocurrencias
+      const recurrenceOptions: RecurrenceOptions = {
+        type: recurrenceType,
+        endType: recurrenceEndType,
+        count: recurrenceCount,
+        endDate: recurrenceEndDate,
+      }
+      const occurrences = generateOccurrences(scheduledAt, recurrenceOptions)
+      if (occurrences.length === 0) {
+        return { error: 'No se generaron ocurrencias con los parámetros indicados' }
+      }
+      const recurrenceGroupId = crypto.randomUUID()
+      await db
+        .insert(stepsActivities)
+        .values(
+          occurrences.map((date) => ({ ...baseFields, scheduledAt: date, recurrenceGroupId }))
+        )
+    }
 
     revalidatePath('/calendar')
+    revalidatePath('/reports')
     return { error: null }
   } catch (err) {
     console.error('[createActivity] failed:', err)

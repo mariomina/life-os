@@ -67,6 +67,12 @@ export const stepsActivities = pgTable(
     okrId: uuid('okr_id').references(() => okrs.id, { onDelete: 'set null' }),
     /** Calendario personalizado al que pertenece esta actividad (Epic 10) */
     calendarId: uuid('calendar_id').references(() => calendars.id, { onDelete: 'set null' }),
+    /**
+     * Grupos de actividades recurrentes (Story 10.4).
+     * Todas las ocurrencias de un evento recurrente comparten el mismo UUID.
+     * null para actividades sin recurrencia.
+     */
+    recurrenceGroupId: uuid('recurrence_group_id'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
@@ -82,6 +88,10 @@ export const stepsActivities = pgTable(
     areaIdx: index('steps_activities_area_id_idx').on(table.areaId),
     /** Reports: time by calendar */
     calendarIdx: index('steps_activities_calendar_id_idx').on(table.calendarId),
+    /** Recurrence group: link all occurrences of a recurring event */
+    recurrenceGroupIdx: index('steps_activities_recurrence_group_id_idx').on(
+      table.recurrenceGroupId
+    ),
   })
 )
 

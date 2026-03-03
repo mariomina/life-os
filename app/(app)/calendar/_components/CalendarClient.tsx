@@ -400,7 +400,15 @@ function SkillTagSection({
 
 // ─── Sub-views ────────────────────────────────────────────────────────────────
 
-function WeekView({ currentDate, events }: { currentDate: Date; events: ICalendarEvent[] }) {
+function WeekView({
+  currentDate,
+  events,
+  onSlotClick,
+}: {
+  currentDate: Date
+  events: ICalendarEvent[]
+  onSlotClick: (day: Date, hour: number) => void
+}) {
   const weekStart = startOfWeek(currentDate, { weekStartsOn: 1 })
   const weekDays = eachDayOfInterval({
     start: weekStart,
@@ -446,14 +454,20 @@ function WeekView({ currentDate, events }: { currentDate: Date; events: ICalenda
                 return e.start.getHours() === hour.getHours()
               })
               return (
-                <div key={day.toISOString()} className="border-l border-border/50 p-0.5 relative">
+                <div
+                  key={day.toISOString()}
+                  className="border-l border-border/50 p-0.5 relative cursor-pointer hover:bg-primary/5 transition-colors"
+                  onClick={() => onSlotClick(day, hour.getHours())}
+                >
                   {dayEvents.map((evt) => {
                     const hexStyle = getEventColorStyle(evt.calendarColor)
                     return (
                       <div
                         key={evt.id}
+                        data-event
                         className={`text-xs rounded border-l-2 px-1 py-0.5 mb-0.5 truncate ${hexStyle ? '' : EVENT_COLOR_CLASSES[evt.color ?? 'blue']}`}
                         style={hexStyle}
+                        onClick={(e) => e.stopPropagation()}
                       >
                         {evt.title}
                       </div>
@@ -538,6 +552,7 @@ function MonthView({ currentDate, events }: { currentDate: Date; events: ICalend
 function DayView({
   currentDate,
   events,
+  onSlotClick,
   onDelete,
   timeTotals,
   activeTimers,
@@ -554,6 +569,7 @@ function DayView({
 }: {
   currentDate: Date
   events: ICalendarEvent[]
+  onSlotClick: (date: Date, hour: number) => void
   onDelete: (id: string) => void
   timeTotals: Record<string, number>
   activeTimers: Map<string, TimerState>
@@ -589,7 +605,10 @@ function DayView({
             <div className="w-16 p-1 pr-2 text-right text-xs text-muted-foreground shrink-0">
               {format(hour, 'HH:mm')}
             </div>
-            <div className="flex-1 border-l border-border/50 p-1 space-y-0.5">
+            <div
+              className="flex-1 border-l border-border/50 p-1 space-y-0.5 cursor-pointer hover:bg-primary/5 transition-colors"
+              onClick={() => onSlotClick(currentDate, hour.getHours())}
+            >
               {slotEvents.map((evt) => {
                 const completedSeconds = timeTotals[evt.id] ?? 0
                 const startedAt = timerStartedAt.get(evt.id)
@@ -609,8 +628,10 @@ function DayView({
                 return (
                   <div
                     key={evt.id}
+                    data-event
                     className={`group text-sm rounded border-l-2 px-2 py-1 ${hexStyle ? '' : EVENT_COLOR_CLASSES[evt.color ?? 'blue']}`}
                     style={hexStyle}
+                    onClick={(e) => e.stopPropagation()}
                   >
                     <div className="flex items-center gap-2">
                       <span className="font-medium">{evt.title}</span>
@@ -787,6 +808,8 @@ export function CalendarClient({
   const [view, setView] = useState<TCalendarView>(defaultView)
   const [currentDate, setCurrentDate] = useState(new Date())
   const [isModalOpen, setIsModalOpen] = useState(false)
+  // Story 10.4 — date+hour from clicking a grid slot (null = use currentDate)
+  const [clickedSlot, setClickedSlot] = useState<Date | null>(null)
 
   // Story 10.2 AC3 — hidden calendars filter (state lives here, set by CalendarSidebar)
   const [hiddenCalendarIds, setHiddenCalendarIds] = useState<Set<string>>(new Set())
@@ -796,6 +819,14 @@ export function CalendarClient({
 
   const handleVisibilityChange = useCallback((hidden: Set<string>) => {
     setHiddenCalendarIds(new Set(hidden))
+  }, [])
+
+  // Story 10.4 — click on an empty grid slot to open the modal with that date+hour
+  const handleSlotClick = useCallback((date: Date, hour: number) => {
+    const slot = new Date(date)
+    slot.setHours(hour, 0, 0, 0)
+    setClickedSlot(slot)
+    setIsModalOpen(true)
   }, [])
 
   // Timer state: Map<activityId, TimerState> — initialized from server-side active timers
@@ -1132,12 +1163,19 @@ export function CalendarClient({
 
         {/* Calendar body */}
         <div className="flex-1 overflow-auto">
-          {view === 'week' && <WeekView currentDate={currentDate} events={visibleEvents} />}
+          {view === 'week' && (
+            <WeekView
+              currentDate={currentDate}
+              events={visibleEvents}
+              onSlotClick={handleSlotClick}
+            />
+          )}
           {view === 'month' && <MonthView currentDate={currentDate} events={visibleEvents} />}
           {view === 'day' && (
             <DayView
               currentDate={currentDate}
               events={visibleEvents}
+              onSlotClick={handleSlotClick}
               onDelete={handleDelete}
               timeTotals={timeTotals}
               activeTimers={activeTimers}
@@ -1157,14 +1195,21 @@ export function CalendarClient({
           {view === 'agenda' && <AgendaView currentDate={currentDate} events={visibleEvents} />}
         </div>
 
-        {/* New Activity Modal (AC1, AC2 Story 5.7) */}
-        <NewActivityModal
-          isOpen={isModalOpen}
-          onClose={() => setIsModalOpen(false)}
-          defaultDate={currentDate}
-          areas={areas}
-          calendars={calendars}
-        />
+        {/* New Activity Modal (AC1, AC2 Story 5.7 / Story 10.4)
+            Conditionally rendered so the modal component mounts fresh on each open
+            (clean state for recurrence fields) and unmounts on close. */}
+        {isModalOpen && (
+          <NewActivityModal
+            isOpen={isModalOpen}
+            onClose={() => {
+              setIsModalOpen(false)
+              setClickedSlot(null)
+            }}
+            defaultDate={clickedSlot ?? currentDate}
+            areas={areas}
+            calendars={calendars}
+          />
+        )}
       </div>
     </div>
   )
