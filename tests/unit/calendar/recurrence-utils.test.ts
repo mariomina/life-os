@@ -1,5 +1,5 @@
 // tests/unit/calendar/recurrence-utils.test.ts
-// Unit tests for generateOccurrences and describeRecurrence — Story 10.4
+// Unit tests for generateOccurrences and describeRecurrence — Story 10.4 / 10.6
 
 import { describe, it, expect } from 'vitest'
 import {
@@ -123,6 +123,28 @@ describe('generateOccurrences', () => {
       expect(date.getMinutes()).toBe(30)
     }
   })
+
+  it('yearly count=3 returns 3 dates on the same day/month but consecutive years', () => {
+    const result = generateOccurrences(BASE_DATE, makeOpts({ type: 'yearly', count: 3 }))
+    expect(result).toHaveLength(3)
+    for (const date of result) {
+      expect(date.getMonth()).toBe(BASE_DATE.getMonth())
+      expect(date.getDate()).toBe(BASE_DATE.getDate())
+    }
+    expect(result[0].getFullYear()).toBe(BASE_DATE.getFullYear())
+    expect(result[1].getFullYear()).toBe(BASE_DATE.getFullYear() + 1)
+    expect(result[2].getFullYear()).toBe(BASE_DATE.getFullYear() + 2)
+  })
+
+  it('yearly count=10 returns exactly 10 occurrences (MAX_OCCURRENCES limit)', () => {
+    const result = generateOccurrences(BASE_DATE, makeOpts({ type: 'yearly', count: 10 }))
+    expect(result).toHaveLength(10)
+  })
+
+  it('yearly count=15 is capped to MAX_OCCURRENCES=10', () => {
+    const result = generateOccurrences(BASE_DATE, makeOpts({ type: 'yearly', count: 15 }))
+    expect(result).toHaveLength(10)
+  })
 })
 
 // ─── describeRecurrence ────────────────────────────────────────────────────────
@@ -151,5 +173,60 @@ describe('describeRecurrence', () => {
     )
     expect(result).toMatch(/mes/)
     expect(result).toMatch(/hasta/)
+  })
+
+  it('yearly count=3 returns readable string with "año"', () => {
+    const result = describeRecurrence(makeOpts({ type: 'yearly', count: 3 }), BASE_DATE)
+    expect(result).toMatch(/3/)
+    expect(result).toMatch(/año/)
+  })
+
+  it('workdays count=5 returns readable string with "hábiles"', () => {
+    const result = describeRecurrence(makeOpts({ type: 'workdays', count: 5 }), BASE_DATE)
+    expect(result).toMatch(/5/)
+    expect(result).toMatch(/hábiles/)
+  })
+})
+
+// ─── workdays (Story 10.6) ─────────────────────────────────────────────────────
+
+describe('workdays recurrence', () => {
+  it('workdays count=5 returns only Mon-Fri dates', () => {
+    const result = generateOccurrences(BASE_DATE, makeOpts({ type: 'workdays', count: 5 }))
+    expect(result).toHaveLength(5)
+    for (const date of result) {
+      const day = date.getDay()
+      expect(day).toBeGreaterThanOrEqual(1)
+      expect(day).toBeLessThanOrEqual(5)
+    }
+  })
+
+  it('workdays count=10 returns exactly 10 Mon-Fri dates', () => {
+    const result = generateOccurrences(BASE_DATE, makeOpts({ type: 'workdays', count: 10 }))
+    expect(result).toHaveLength(10)
+    for (const date of result) {
+      const day = date.getDay()
+      expect(day).toBeGreaterThanOrEqual(1)
+      expect(day).toBeLessThanOrEqual(5)
+    }
+  })
+
+  it('workdays preserves the hour and minute of the start date', () => {
+    const start = new Date('2026-03-09T08:30:00') // Monday
+    const result = generateOccurrences(start, makeOpts({ type: 'workdays', count: 3 }))
+    for (const date of result) {
+      expect(date.getHours()).toBe(8)
+      expect(date.getMinutes()).toBe(30)
+    }
+  })
+
+  it('workdays starting on Friday only includes Fri then skips to Mon', () => {
+    // 2026-03-13 is a Friday
+    const friday = new Date('2026-03-13T09:00:00')
+    const result = generateOccurrences(friday, makeOpts({ type: 'workdays', count: 3 }))
+    expect(result).toHaveLength(3)
+    expect(result[0].getDay()).toBe(5) // Fri
+    expect(result[1].getDay()).toBe(1) // Mon (skip Sat/Sun)
+    expect(result[2].getDay()).toBe(2) // Tue
   })
 })

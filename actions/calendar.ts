@@ -5,13 +5,16 @@
 // Crea y elimina entradas en steps_activities; obtiene áreas del usuario.
 // Story 5.7 — CRUD Eventos desde el Calendario.
 // Story 10.4 — Recurrencia: crea múltiples ocurrencias agrupadas por recurrenceGroupId.
+// Story 10.6 — Recurrencia 'workdays': filtra festivos del usuario post-generación.
 
 import { eq, and, asc } from 'drizzle-orm'
+import { format } from 'date-fns'
 import { revalidatePath } from 'next/cache'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { db, assertDatabaseUrl } from '@/lib/db/client'
 import { stepsActivities } from '@/lib/db/schema/steps-activities'
 import { areas } from '@/lib/db/schema/areas'
+import { getHolidaysForUser } from '@/lib/db/queries/holidays'
 import {
   generateOccurrences,
   type RecurrenceType,
@@ -73,7 +76,6 @@ export async function createActivity(formData: FormData): Promise<ActionResult> 
   const trimmedTitle = title.trim()
   if (!trimmedTitle) return { error: 'El título es requerido' }
   if (trimmedTitle.length > 100) return { error: 'El título no puede superar 100 caracteres' }
-  if (!areaId || !UUID_REGEX.test(areaId)) return { error: 'Selecciona un área válida' }
   if (!date || !time) return { error: 'La fecha y hora son requeridas' }
 
   const scheduledAt = new Date(`${date}T${time}:00`)
@@ -89,7 +91,7 @@ export async function createActivity(formData: FormData): Promise<ActionResult> 
       userId,
       title: trimmedTitle,
       scheduledDurationMinutes: durationMinutes,
-      areaId,
+      areaId: areaId && UUID_REGEX.test(areaId) ? areaId : null,
       calendarId: calendarId ?? null,
       status: 'pending' as const,
       planned: false,
@@ -107,7 +109,15 @@ export async function createActivity(formData: FormData): Promise<ActionResult> 
         count: recurrenceCount,
         endDate: recurrenceEndDate,
       }
-      const occurrences = generateOccurrences(scheduledAt, recurrenceOptions)
+      let occurrences = generateOccurrences(scheduledAt, recurrenceOptions)
+
+      // Story 10.6: para 'workdays', filtrar fechas que caigan en festivos del usuario
+      if (recurrenceType === 'workdays') {
+        const userHolidays = await getHolidaysForUser(userId)
+        const holidayDates = new Set(userHolidays.map((h) => h.date)) // Set<'YYYY-MM-DD'>
+        occurrences = occurrences.filter((d) => !holidayDates.has(format(d, 'yyyy-MM-dd')))
+      }
+
       if (occurrences.length === 0) {
         return { error: 'No se generaron ocurrencias con los parámetros indicados' }
       }

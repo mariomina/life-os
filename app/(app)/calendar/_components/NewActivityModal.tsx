@@ -4,12 +4,12 @@
 // Modal dialog for creating a new spontaneous activity in the calendar.
 // Story 5.7  — CRUD Eventos desde el Calendario.
 // Story 10.4 — Click-to-create con hora pre-llenada + eventos recurrentes.
+// Story 10.6 — Duración personalizada + recurrencia días hábiles.
 
 import { useRef, useEffect, useState, useTransition } from 'react'
 import { format } from 'date-fns'
 import { X, RefreshCw } from 'lucide-react'
 import { createActivity } from '@/actions/calendar'
-import type { AreaOption } from '@/actions/calendar'
 import type { Calendar } from '@/lib/db/queries/calendars'
 import {
   RECURRENCE_LABELS,
@@ -22,10 +22,8 @@ import {
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface NewActivityModalProps {
-  isOpen: boolean
   onClose: () => void
   defaultDate: Date
-  areas: AreaOption[]
   /** Calendars for the selector (Story 10.2 AC6) */
   calendars?: Calendar[]
 }
@@ -39,6 +37,7 @@ const DURATION_OPTIONS = [
   { value: 60, label: '1 hora' },
   { value: 90, label: '1h 30min' },
   { value: 120, label: '2 horas' },
+  { value: 0, label: 'Personalizado...' },
 ]
 
 const RECURRENCE_OPTIONS = Object.entries(RECURRENCE_LABELS) as [RecurrenceType, string][]
@@ -54,16 +53,20 @@ function defaultEndDate(from: Date): string {
 
 // ─── NewActivityModal ─────────────────────────────────────────────────────────
 
-export function NewActivityModal({
-  isOpen,
-  onClose,
-  defaultDate,
-  areas,
-  calendars = [],
-}: NewActivityModalProps) {
+export function NewActivityModal({ onClose, defaultDate, calendars = [] }: NewActivityModalProps) {
   const dialogRef = useRef<HTMLDialogElement>(null)
   const [error, setError] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
+
+  // Duration state (Story 10.6)
+  const [durationMode, setDurationMode] = useState<'preset' | 'custom'>('preset')
+  const [presetDuration, setPresetDuration] = useState(30)
+  const [customHours, setCustomHours] = useState(0)
+  const [customMins, setCustomMins] = useState(30)
+
+  // Effective duration in minutes sent to the form
+  const effectiveDuration =
+    durationMode === 'custom' ? Math.max(1, customHours * 60 + customMins) : presetDuration
 
   // Recurrence state
   const [recurrenceType, setRecurrenceType] = useState<RecurrenceType>('none')
@@ -103,6 +106,8 @@ export function NewActivityModal({
   }, [onClose])
 
   function handleSubmit(formData: FormData) {
+    // Inject effective duration (preset or custom) into the form data
+    formData.set('duration', String(effectiveDuration))
     setError(null)
     startTransition(async () => {
       const result = await createActivity(formData)
@@ -197,15 +202,23 @@ export function NewActivityModal({
           </div>
         </div>
 
-        {/* Duration */}
+        {/* Duration (Story 10.6 — con opción personalizada) */}
         <div className="space-y-1">
-          <label htmlFor="duration" className="text-sm font-medium text-foreground">
+          <label htmlFor="durationSelect" className="text-sm font-medium text-foreground">
             Duración
           </label>
           <select
-            id="duration"
-            name="duration"
-            defaultValue={30}
+            id="durationSelect"
+            value={durationMode === 'custom' ? 0 : presetDuration}
+            onChange={(e) => {
+              const val = Number(e.target.value)
+              if (val === 0) {
+                setDurationMode('custom')
+              } else {
+                setDurationMode('preset')
+                setPresetDuration(val)
+              }
+            }}
             className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
           >
             {DURATION_OPTIONS.map((opt) => (
@@ -214,31 +227,39 @@ export function NewActivityModal({
               </option>
             ))}
           </select>
-        </div>
 
-        {/* Area */}
-        <div className="space-y-1">
-          <label htmlFor="areaId" className="text-sm font-medium text-foreground">
-            Área <span className="text-red-500">*</span>
-          </label>
-          {areas.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              Configura tus áreas primero en la sección Áreas de Vida.
-            </p>
-          ) : (
-            <select
-              id="areaId"
-              name="areaId"
-              required
-              className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
-            >
-              <option value="">Selecciona un área</option>
-              {areas.map((area) => (
-                <option key={area.id} value={area.id}>
-                  {area.maslowLevel}. {area.name}
-                </option>
-              ))}
-            </select>
+          {/* Custom duration inputs — visible only when 'Personalizado' is selected */}
+          {durationMode === 'custom' && (
+            <div className="flex items-center gap-2 mt-2">
+              <div className="flex items-center gap-1">
+                <input
+                  type="number"
+                  min={0}
+                  max={23}
+                  value={customHours}
+                  onChange={(e) =>
+                    setCustomHours(Math.max(0, Math.min(23, Number(e.target.value))))
+                  }
+                  className="w-14 rounded-lg border border-border bg-background px-2 py-1 text-sm text-center focus:outline-none focus:ring-2 focus:ring-primary/50"
+                />
+                <span className="text-sm text-muted-foreground">h</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <select
+                  value={customMins}
+                  onChange={(e) => setCustomMins(Number(e.target.value))}
+                  className="w-16 rounded-lg border border-border bg-background px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                >
+                  {[0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55].map((m) => (
+                    <option key={m} value={m}>
+                      {String(m).padStart(2, '0')}
+                    </option>
+                  ))}
+                </select>
+                <span className="text-sm text-muted-foreground">min</span>
+              </div>
+              <span className="text-xs text-muted-foreground ml-1">= {effectiveDuration} min</span>
+            </div>
           )}
         </div>
 
@@ -264,7 +285,7 @@ export function NewActivityModal({
           </div>
         )}
 
-        {/* ── Recurrencia (Story 10.4) ────────────────────────────────────── */}
+        {/* ── Recurrencia (Story 10.4 / 10.6) ────────────────────────────── */}
         <div className="space-y-3 border-t border-border pt-4">
           <div className="flex items-center gap-2">
             <RefreshCw className="h-4 w-4 text-muted-foreground shrink-0" />
@@ -353,6 +374,11 @@ export function NewActivityModal({
               {recurrencePreview && (
                 <p className="text-xs text-primary bg-primary/8 rounded-lg px-3 py-2">
                   {recurrencePreview}
+                  {recurrenceType === 'workdays' && (
+                    <span className="block mt-0.5 text-orange-600 dark:text-orange-400">
+                      Los festivos configurados serán excluidos al guardar.
+                    </span>
+                  )}
                 </p>
               )}
             </div>
@@ -388,7 +414,7 @@ export function NewActivityModal({
           </button>
           <button
             type="submit"
-            disabled={isPending || areas.length === 0}
+            disabled={isPending}
             className="rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
           >
             {isPending ? 'Creando...' : recurrenceType !== 'none' ? `Crear eventos` : 'Crear'}

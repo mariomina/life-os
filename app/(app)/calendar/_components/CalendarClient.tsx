@@ -38,10 +38,10 @@ import {
 } from '@/lib/calendar/calendar-utils'
 import { NewActivityModal } from './NewActivityModal'
 import { CalendarSidebar } from './CalendarSidebar'
-import type { AreaOption } from '@/actions/calendar'
 import { createSupabaseBrowserClient } from '@/lib/supabase/client'
 import type { Skill } from '@/lib/db/schema/skills'
 import type { Calendar } from '@/lib/db/queries/calendars'
+import type { Holiday } from '@/lib/db/queries/holidays'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -53,9 +53,10 @@ interface TimerState {
 interface CalendarClientProps {
   events?: ICalendarEvent[]
   defaultView?: TCalendarView
-  areas?: AreaOption[]
   /** Calendars for the sidebar and activity picker (Story 10.2) */
   calendars?: Calendar[]
+  /** Festivos del usuario para indicadores visuales y filtrado de 'workdays' (Story 10.6) */
+  holidays?: Holiday[]
   /** Record<activityId, totalSeconds> — accumulated time from completed sessions */
   timeTotals?: Record<string, number>
   /** Record<activityId, entryId> — currently active timer entry per activity */
@@ -404,10 +405,12 @@ function WeekView({
   currentDate,
   events,
   onSlotClick,
+  holidays = [],
 }: {
   currentDate: Date
   events: ICalendarEvent[]
   onSlotClick: (day: Date, hour: number) => void
+  holidays?: Holiday[]
 }) {
   const weekStart = startOfWeek(currentDate, { weekStartsOn: 1 })
   const weekDays = eachDayOfInterval({
@@ -415,27 +418,40 @@ function WeekView({
     end: endOfWeek(currentDate, { weekStartsOn: 1 }),
   })
   const hours = getDayHourSlots(currentDate, 0, 24)
+  // Story 10.6 — Map<'YYYY-MM-DD', name> for quick holiday lookup
+  const holidayMap = new Map(holidays.map((h) => [h.date, h.name]))
 
   return (
     <div className="overflow-auto">
       {/* Day headers */}
       <div className="grid grid-cols-8 border-b border-border sticky top-0 bg-background z-10">
         <div className="p-2" /> {/* Time gutter */}
-        {weekDays.map((day) => (
-          <div
-            key={day.toISOString()}
-            className={`p-2 text-center text-xs font-medium border-l border-border ${
-              isToday(day) ? 'text-primary font-bold' : 'text-muted-foreground'
-            }`}
-          >
-            <div>{format(day, 'EEE', { locale: es })}</div>
+        {weekDays.map((day) => {
+          const holidayName = holidayMap.get(format(day, 'yyyy-MM-dd'))
+          return (
             <div
-              className={`text-lg leading-tight ${isToday(day) ? 'bg-primary text-primary-foreground rounded-full w-8 h-8 flex items-center justify-center mx-auto' : ''}`}
+              key={day.toISOString()}
+              className={`p-2 text-center text-xs font-medium border-l border-border ${
+                isToday(day) ? 'text-primary font-bold' : 'text-muted-foreground'
+              } ${holidayName ? 'bg-orange-50/80 dark:bg-orange-950/30' : ''}`}
             >
-              {format(day, 'd')}
+              <div>{format(day, 'EEE', { locale: es })}</div>
+              <div
+                className={`text-lg leading-tight ${isToday(day) ? 'bg-primary text-primary-foreground rounded-full w-8 h-8 flex items-center justify-center mx-auto' : ''}`}
+              >
+                {format(day, 'd')}
+              </div>
+              {holidayName && (
+                <div
+                  className="text-[9px] text-orange-600 dark:text-orange-400 bg-orange-100 dark:bg-orange-900/40 rounded px-0.5 mt-0.5 truncate leading-tight"
+                  title={holidayName}
+                >
+                  {holidayName}
+                </div>
+              )}
             </div>
-          </div>
-        ))}
+          )
+        })}
       </div>
 
       {/* Hour rows */}
@@ -483,9 +499,19 @@ function WeekView({
   )
 }
 
-function MonthView({ currentDate, events }: { currentDate: Date; events: ICalendarEvent[] }) {
+function MonthView({
+  currentDate,
+  events,
+  holidays = [],
+}: {
+  currentDate: Date
+  events: ICalendarEvent[]
+  holidays?: Holiday[]
+}) {
   const days = getMonthGridDays(currentDate)
   const dayNames = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
+  // Story 10.6 — Map<'YYYY-MM-DD', name> for quick holiday lookup
+  const holidayMap = new Map(holidays.map((h) => [h.date, h.name]))
 
   return (
     <div>
@@ -502,11 +528,17 @@ function MonthView({ currentDate, events }: { currentDate: Date; events: ICalend
         {days.map((day) => {
           const dayEvents = getEventsForDay(events, day)
           const inCurrentMonth = isSameMonth(day, currentDate)
+          const holidayName = holidayMap.get(format(day, 'yyyy-MM-dd'))
           return (
             <div
               key={day.toISOString()}
+              title={holidayName}
               className={`min-h-24 border-b border-r border-border p-1 ${
-                !inCurrentMonth ? 'bg-muted/30' : ''
+                !inCurrentMonth
+                  ? 'bg-muted/30'
+                  : holidayName
+                    ? 'bg-orange-50/70 dark:bg-orange-950/25'
+                    : ''
               }`}
             >
               <span
@@ -520,6 +552,12 @@ function MonthView({ currentDate, events }: { currentDate: Date; events: ICalend
               >
                 {format(day, 'd')}
               </span>
+              {/* Story 10.6 — Holiday badge */}
+              {inCurrentMonth && holidayName && (
+                <div className="text-[9px] text-orange-600 dark:text-orange-400 bg-orange-100 dark:bg-orange-900/40 rounded px-0.5 mt-0.5 truncate leading-tight">
+                  {holidayName}
+                </div>
+              )}
               {/* Dot indicator (AC3 Story 5.4) — visible only for days in current month with events */}
               {inCurrentMonth && dayEvents.length > 0 && (
                 <div className="w-1 h-1 rounded-full bg-primary mx-auto mt-0.5" />
@@ -797,8 +835,8 @@ const AVAILABLE_VIEWS: TCalendarView[] = ['day', 'week', 'month', 'year', 'agend
 export function CalendarClient({
   events = [],
   defaultView = 'week',
-  areas = [],
   calendars = [],
+  holidays = [],
   timeTotals = {},
   initialActiveTimers = {},
   initialTimerStartedAt = {},
@@ -1168,9 +1206,12 @@ export function CalendarClient({
               currentDate={currentDate}
               events={visibleEvents}
               onSlotClick={handleSlotClick}
+              holidays={holidays}
             />
           )}
-          {view === 'month' && <MonthView currentDate={currentDate} events={visibleEvents} />}
+          {view === 'month' && (
+            <MonthView currentDate={currentDate} events={visibleEvents} holidays={holidays} />
+          )}
           {view === 'day' && (
             <DayView
               currentDate={currentDate}
@@ -1200,13 +1241,11 @@ export function CalendarClient({
             (clean state for recurrence fields) and unmounts on close. */}
         {isModalOpen && (
           <NewActivityModal
-            isOpen={isModalOpen}
             onClose={() => {
               setIsModalOpen(false)
               setClickedSlot(null)
             }}
             defaultDate={clickedSlot ?? currentDate}
-            areas={areas}
             calendars={calendars}
           />
         )}

@@ -1,7 +1,6 @@
 // app/(app)/calendar/page.tsx
 // Server Component — auth check + calendar data fetch.
 // Delegates rendering to CalendarClient (Client Component).
-// Story 5.7: passes areas list for NewActivityModal.
 // Story 5.8: passes timeTotals + activeTimers for time tracking UI.
 // Story 5.9: passes initialTimerStartedAt for live clock seed.
 
@@ -9,7 +8,6 @@ import { redirect } from 'next/navigation'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { CalendarClient } from './_components/CalendarClient'
 import { getActivitiesForYear } from '@/lib/db/queries/calendar'
-import { getAreasForUser } from '@/actions/calendar'
 import {
   getTimeTotalsForActivities,
   getActiveTimersForActivities,
@@ -17,6 +15,7 @@ import {
 } from '@/actions/timer'
 import { getUserSkills, getSkillTagsForActivities } from '@/lib/db/queries/skills'
 import { getCalendarsForUser, seedDefaultCalendars } from '@/actions/calendars'
+import { getHolidaysForUser } from '@/lib/db/queries/holidays'
 import type { ICalendarEvent } from '@/lib/calendar/calendar-utils'
 
 export default async function CalendarPage() {
@@ -32,12 +31,12 @@ export default async function CalendarPage() {
   // Seed default calendars on first visit if user has none
   await seedDefaultCalendars()
 
-  // Fetch activities, areas, and calendars in parallel
+  // Fetch activities, calendars and holidays in parallel
   let events: ICalendarEvent[] = []
-  const [activitiesResult, areasResult, calendarsResult] = await Promise.allSettled([
+  const [activitiesResult, calendarsResult, holidaysResult] = await Promise.allSettled([
     getActivitiesForYear(user.id, new Date()),
-    getAreasForUser(),
     getCalendarsForUser(),
+    getHolidaysForUser(user.id),
   ])
 
   if (activitiesResult.status === 'fulfilled') {
@@ -62,8 +61,8 @@ export default async function CalendarPage() {
     console.error('[CalendarPage] getActivitiesForYear failed:', activitiesResult.reason)
   }
 
-  const areasData = areasResult.status === 'fulfilled' ? areasResult.value : []
   const calendarsData = calendarsResult.status === 'fulfilled' ? calendarsResult.value : []
+  const holidaysData = holidaysResult.status === 'fulfilled' ? holidaysResult.value : []
 
   // Fetch time tracking data + skills data in parallel (Story 5.8 + 5.9 + 7.2)
   const activityIds = events.map((e) => e.id)
@@ -93,8 +92,8 @@ export default async function CalendarPage() {
     <CalendarClient
       events={events}
       defaultView="week"
-      areas={areasData}
       calendars={calendarsData}
+      holidays={holidaysData}
       timeTotals={timeTotals}
       initialActiveTimers={activeTimers}
       initialTimerStartedAt={timerStartTimes}

@@ -1,14 +1,24 @@
 /**
- * Utilidades de recurrencia para actividades del calendario — Story 10.4.
+ * Utilidades de recurrencia para actividades del calendario — Story 10.4 / 10.6.
  *
  * Genera ocurrencias concretas de Date[] a partir de una fecha de inicio y
  * opciones de recurrencia. Las ocurrencias se pre-crean en BD (no se expanden
  * on-the-fly), agrupadas por recurrenceGroupId.
+ *
+ * Story 10.6: añadido 'workdays' (Lun-Vie excluyendo festivos del usuario).
+ * El filtrado de festivos se aplica POST-generación en el server action createActivity.
  */
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export type RecurrenceType = 'none' | 'daily' | 'weekdays' | 'weekly' | 'monthly'
+export type RecurrenceType =
+  | 'none'
+  | 'daily'
+  | 'weekdays'
+  | 'workdays'
+  | 'weekly'
+  | 'monthly'
+  | 'yearly'
 
 export interface RecurrenceOptions {
   type: RecurrenceType
@@ -26,8 +36,10 @@ export const RECURRENCE_DEFAULTS: Record<RecurrenceType, number> = {
   none: 1,
   daily: 30,
   weekdays: 20, // ~4 semanas de Lun-Vie
+  workdays: 20, // ~4 semanas de días hábiles
   weekly: 8,
   monthly: 3,
+  yearly: 3,
 }
 
 /** Límites máximos para evitar inserciones masivas accidentales */
@@ -35,8 +47,10 @@ const MAX_OCCURRENCES: Record<RecurrenceType, number> = {
   none: 1,
   daily: 365,
   weekdays: 260,
+  workdays: 260,
   weekly: 52,
   monthly: 12,
+  yearly: 10,
 }
 
 // ─── Core generator ───────────────────────────────────────────────────────────
@@ -44,6 +58,9 @@ const MAX_OCCURRENCES: Record<RecurrenceType, number> = {
 /**
  * Genera un array de Dates para un evento recurrente.
  * Siempre incluye la fecha de inicio como primera ocurrencia.
+ *
+ * Nota: 'workdays' genera las mismas fechas que 'weekdays' (Lun-Vie).
+ * El filtrado de festivos se aplica en createActivity() del server action.
  *
  * @param start - Fecha y hora de la primera ocurrencia
  * @param options - Configuración de recurrencia
@@ -63,7 +80,7 @@ export function generateOccurrences(start: Date, options: RecurrenceOptions): Da
     // Verificar límite por fecha
     if (endDate && current > endDate) break
 
-    if (options.type === 'weekdays') {
+    if (options.type === 'weekdays' || options.type === 'workdays') {
       const dayOfWeek = current.getDay() // 0=Dom, 1=Lun, ..., 5=Vie, 6=Sáb
       if (dayOfWeek >= 1 && dayOfWeek <= 5) {
         results.push(new Date(current))
@@ -88,6 +105,7 @@ function nextCandidate(date: Date, type: RecurrenceType): Date {
       next.setDate(next.getDate() + 1)
       break
     case 'weekdays':
+    case 'workdays':
       // Avanzar 1 día siempre; el filtro de Lun-Vie está en el loop principal
       next.setDate(next.getDate() + 1)
       break
@@ -100,6 +118,15 @@ function nextCandidate(date: Date, type: RecurrenceType): Date {
       // Si el mes destino tiene menos días (ej. 31 → feb), ajustar al último día
       const daysInNextMonth = new Date(next.getFullYear(), next.getMonth() + 1, 0).getDate()
       next.setDate(Math.min(originalDay, daysInNextMonth))
+      break
+    }
+    case 'yearly': {
+      const originalDay = date.getDate()
+      const originalMonth = date.getMonth()
+      next.setFullYear(next.getFullYear() + 1)
+      // Ajustar si el mes destino tiene menos días (ej. 29-Feb en año no bisiesto)
+      const daysInMonth = new Date(next.getFullYear(), originalMonth + 1, 0).getDate()
+      next.setDate(Math.min(originalDay, daysInMonth))
       break
     }
     default:
@@ -115,8 +142,10 @@ const TYPE_LABELS: Record<RecurrenceType, string> = {
   none: 'Sin repetición',
   daily: 'cada día',
   weekdays: 'días de semana (Lun–Vie)',
+  workdays: 'días hábiles (excl. festivos)',
   weekly: 'cada semana',
   monthly: 'cada mes',
+  yearly: 'cada año',
 }
 
 /**
@@ -146,6 +175,8 @@ export const RECURRENCE_LABELS: Record<RecurrenceType, string> = {
   none: 'No se repite',
   daily: 'Cada día',
   weekdays: 'Días de semana (Lun–Vie)',
+  workdays: 'Días hábiles (excl. festivos)',
   weekly: 'Cada semana',
   monthly: 'Cada mes',
+  yearly: 'Cada año',
 }

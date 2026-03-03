@@ -46,5 +46,8 @@ export * from './aios-queue-log'
 // ── Level 8: Independent analytics ───────────────────────────
 export * from './correlations'
 
+// ── Level 9: Independent user data ────────────────────────────
+export * from './holidays'
+
 // ── Relations: Always last ────────────────────────────────────
 export * from './relations'
