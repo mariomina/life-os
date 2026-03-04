@@ -115,10 +115,10 @@ describe('formatDuration — agenda row display', () => {
 })
 
 describe('formatMinutes — time budget display (no regression)', () => {
-  it('always returns Xh Ym format (for TimeBudgetPanel)', () => {
-    expect(formatMinutes(30)).toBe('0h 30m')
-    expect(formatMinutes(60)).toBe('1h 0m')
+  it('returns compact format omitting zero parts', () => {
+    expect(formatMinutes(30)).toBe('30m')
+    expect(formatMinutes(60)).toBe('1h')
     expect(formatMinutes(90)).toBe('1h 30m')
-    expect(formatMinutes(960)).toBe('16h 0m')
+    expect(formatMinutes(1440)).toBe('24h')
   })
 })

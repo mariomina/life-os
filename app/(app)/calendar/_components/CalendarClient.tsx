@@ -35,6 +35,8 @@ import {
   getMonthGridDays,
   getDayHourSlots,
   getEventsForDay,
+  getEventsForRange,
+  getWeekRange,
 } from '@/lib/calendar/calendar-utils'
 import { NewActivityModal } from './NewActivityModal'
 import { CalendarSidebar } from './CalendarSidebar'
@@ -165,7 +167,22 @@ export function formatMinutes(minutes: number): string {
   const abs = Math.abs(minutes)
   const h = Math.floor(abs / 60)
   const m = Math.round(abs % 60)
-  return `${h}h ${m}m`
+  if (h === 0) return `${m}m`
+  return m === 0 ? `${h}h` : `${h}h ${m}m`
+}
+
+/** Formato largo para semana: convierte minutos a días+horas+minutos */
+function formatMinutesWeekly(minutes: number): string {
+  const abs = Math.abs(minutes)
+  const d = Math.floor(abs / (24 * 60))
+  const h = Math.floor((abs % (24 * 60)) / 60)
+  const m = Math.round(abs % 60)
+  if (d > 0 && h === 0 && m === 0) return `${d}d`
+  if (d > 0 && m === 0) return `${d}d ${h}h`
+  if (d > 0) return `${d}d ${h}h ${m}m`
+  if (h > 0 && m === 0) return `${h}h`
+  if (h > 0) return `${h}h ${m}m`
+  return `${m}m`
 }
 
 function formatDuration(minutes: number): string {
@@ -178,29 +195,30 @@ function formatDuration(minutes: number): string {
 // ─── Time Budget Panel (AC4) ───────────────────────────────────────────────────
 
 function TimeBudgetPanel({ events }: { events: ICalendarEvent[] }) {
-  const { committed, available, free } = calcTimeBudget(events)
+  const { committed, free } = calcTimeBudget(events)
   const isOvercommitted = free < 0
 
   return (
-    <div className="flex items-center gap-6 px-4 py-2 border-b border-border bg-muted/30 text-sm">
-      <span className="font-medium text-foreground">Time Budget</span>
-      <div className="flex items-center gap-1 text-muted-foreground">
-        <span>Comprometido:</span>
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-2 border-b border-border bg-muted/30 text-sm">
+      <span className="font-medium text-foreground shrink-0">Time Budget</span>
+      <span className="text-muted-foreground">
+        Total: <span className="font-semibold text-foreground">24h</span>
+      </span>
+      <span className="text-muted-foreground">·</span>
+      <span className="text-muted-foreground">
+        Comprometido:{' '}
         <span className="font-semibold text-foreground">{formatMinutes(committed)}</span>
-      </div>
-      <div className="flex items-center gap-1 text-muted-foreground">
-        <span>Disponible:</span>
-        <span className="font-semibold text-foreground">{formatMinutes(available)}</span>
-      </div>
-      <div className="flex items-center gap-1 text-muted-foreground">
-        <span>Libre:</span>
+      </span>
+      <span className="text-muted-foreground">·</span>
+      <span className="text-muted-foreground">
+        Libre:{' '}
         <span
           className={`font-semibold ${isOvercommitted ? 'text-red-500' : 'text-green-600 dark:text-green-400'}`}
         >
           {isOvercommitted ? '-' : ''}
-          {formatMinutes(free)}
+          {formatMinutes(Math.abs(free))}
         </span>
-      </div>
+      </span>
     </div>
   )
 }
@@ -208,29 +226,30 @@ function TimeBudgetPanel({ events }: { events: ICalendarEvent[] }) {
 // ─── Weekly Time Budget Panel (AC3 Story 5.3) ─────────────────────────────────
 
 function WeeklyTimeBudgetPanel({ events }: { events: ICalendarEvent[] }) {
-  const { committed, available, free } = calcWeeklyTimeBudget(events)
+  const { committed, free } = calcWeeklyTimeBudget(events)
   const isOvercommitted = free < 0
 
   return (
-    <div className="flex items-center gap-6 px-4 py-2 border-b border-border bg-muted/30 text-sm">
-      <span className="font-medium text-foreground">Time Budget Semanal</span>
-      <div className="flex items-center gap-1 text-muted-foreground">
-        <span>Comprometido:</span>
-        <span className="font-semibold text-foreground">{formatMinutes(committed)}</span>
-      </div>
-      <div className="flex items-center gap-1 text-muted-foreground">
-        <span>Disponible:</span>
-        <span className="font-semibold text-foreground">{formatMinutes(available)}</span>
-      </div>
-      <div className="flex items-center gap-1 text-muted-foreground">
-        <span>Libre:</span>
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-2 border-b border-border bg-muted/30 text-sm">
+      <span className="font-medium text-foreground shrink-0">Time Budget Semanal</span>
+      <span className="text-muted-foreground">
+        Total: <span className="font-semibold text-foreground">7d</span>
+      </span>
+      <span className="text-muted-foreground">·</span>
+      <span className="text-muted-foreground">
+        Comprometido:{' '}
+        <span className="font-semibold text-foreground">{formatMinutesWeekly(committed)}</span>
+      </span>
+      <span className="text-muted-foreground">·</span>
+      <span className="text-muted-foreground">
+        Libre:{' '}
         <span
           className={`font-semibold ${isOvercommitted ? 'text-red-500' : 'text-green-600 dark:text-green-400'}`}
         >
           {isOvercommitted ? '-' : ''}
-          {formatMinutes(free)}
+          {formatMinutesWeekly(Math.abs(free))}
         </span>
-      </div>
+      </span>
     </div>
   )
 }
@@ -1067,6 +1086,9 @@ export function CalendarClient({
   // Events for the currently displayed day — used by Time Budget panel (AC4)
   const currentDayEvents = getEventsForDay(visibleEvents, currentDate)
 
+  // Events for the currently displayed week — used by Weekly Time Budget panel
+  const currentWeekEvents = getEventsForRange(visibleEvents, getWeekRange(currentDate))
+
   function navigate(direction: 'prev' | 'next' | 'today') {
     if (direction === 'today') {
       setCurrentDate(new Date())
@@ -1282,7 +1304,7 @@ export function CalendarClient({
         {view === 'day' && <TimeBudgetPanel events={currentDayEvents} />}
 
         {/* Weekly Time Budget panel — only in Week view (AC3 Story 5.3) */}
-        {view === 'week' && <WeeklyTimeBudgetPanel events={visibleEvents} />}
+        {view === 'week' && <WeeklyTimeBudgetPanel events={currentWeekEvents} />}
 
         {/* Calendar body */}
         <div className="flex-1 overflow-auto">
