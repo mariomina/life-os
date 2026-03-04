@@ -654,6 +654,7 @@ function DayView({
   skillTags,
   onTagSkill,
   onRemoveSkillTag,
+  holidays = [],
 }: {
   currentDate: Date
   events: ICalendarEvent[]
@@ -674,10 +675,13 @@ function DayView({
   skillTags: Record<string, string[]>
   onTagSkill: (activityId: string, skillId: string) => void
   onRemoveSkillTag: (activityId: string, skillId: string) => void
+  holidays?: Holiday[]
 }) {
   const router = useRouter()
   const hours = getDayHourSlots(currentDate, 0, 24)
   const dayEvents = getEventsForDay(events, currentDate)
+  const holidayMap = new Map(holidays.map((h) => [h.date, h.name]))
+  const holidayName = holidayMap.get(format(currentDate, 'yyyy-MM-dd'))
 
   function handleCheckin(activityId: string) {
     router.push(`/checkin?activityId=${activityId}`)
@@ -685,6 +689,13 @@ function DayView({
 
   return (
     <div className="overflow-auto">
+      {/* Holiday banner */}
+      {holidayName && (
+        <div className="flex items-center gap-2 px-4 py-2 bg-orange-50 dark:bg-orange-950/30 border-b border-orange-200 dark:border-orange-800 text-sm text-orange-700 dark:text-orange-400">
+          <span className="font-semibold">{holidayName}</span>
+          <span className="text-xs opacity-70">— Feriado Ecuador</span>
+        </div>
+      )}
       {/* 24h grid with absolute-positioned event spanning */}
       <div className="relative" style={{ height: `${24 * ROW_H}px` }}>
         {/* Background: hour rows for grid lines + click areas */}
@@ -780,17 +791,31 @@ function DayView({
   )
 }
 
-function AgendaView({ currentDate, events }: { currentDate: Date; events: ICalendarEvent[] }) {
+function AgendaView({
+  currentDate,
+  events,
+  holidays = [],
+}: {
+  currentDate: Date
+  events: ICalendarEvent[]
+  holidays?: Holiday[]
+}) {
   const next30Days = eachDayOfInterval({
     start: currentDate,
     end: addDays(currentDate, 29),
   })
+  const holidayMap = new Map(holidays.map((h) => [h.date, h.name]))
 
-  const daysWithEvents = next30Days
-    .map((day) => ({ day, events: getEventsForDay(events, day) }))
-    .filter(({ events }) => events.length > 0)
+  // Include days that have events OR are holidays
+  const daysToShow = next30Days
+    .map((day) => ({
+      day,
+      events: getEventsForDay(events, day),
+      holidayName: holidayMap.get(format(day, 'yyyy-MM-dd')),
+    }))
+    .filter(({ events, holidayName }) => events.length > 0 || !!holidayName)
 
-  if (daysWithEvents.length === 0) {
+  if (daysToShow.length === 0) {
     return (
       <div className="flex items-center justify-center h-40 text-muted-foreground text-sm">
         No hay eventos en los próximos 30 días
@@ -800,19 +825,29 @@ function AgendaView({ currentDate, events }: { currentDate: Date; events: ICalen
 
   return (
     <div className="space-y-4 p-4">
-      {daysWithEvents.map(({ day, events: dayEvents }) => (
+      {daysToShow.map(({ day, events: dayEvents, holidayName }) => (
         <div key={day.toISOString()}>
-          <div
-            className={`text-sm font-semibold mb-2 ${isToday(day) ? 'text-primary' : 'text-foreground'}`}
-          >
-            {format(day, "EEEE, d 'de' MMMM", { locale: es })}
+          <div className="flex items-center flex-wrap gap-2 mb-2">
+            <span
+              className={`text-sm font-semibold ${isToday(day) ? 'text-primary' : 'text-foreground'}`}
+            >
+              {format(day, "EEEE, d 'de' MMMM", { locale: es })}
+            </span>
             {isToday(day) && (
-              <span className="ml-2 text-xs bg-primary text-primary-foreground px-1.5 py-0.5 rounded-full">
+              <span className="text-xs bg-primary text-primary-foreground px-1.5 py-0.5 rounded-full">
                 Hoy
+              </span>
+            )}
+            {holidayName && (
+              <span className="text-xs bg-orange-100 dark:bg-orange-900/40 text-orange-600 dark:text-orange-400 px-1.5 py-0.5 rounded">
+                {holidayName}
               </span>
             )}
           </div>
           <div className="space-y-1 pl-4">
+            {dayEvents.length === 0 && (
+              <p className="text-xs text-muted-foreground italic">Sin actividades programadas</p>
+            )}
             {dayEvents.map((evt) => {
               const durationMin = Math.round((evt.end.getTime() - evt.start.getTime()) / 60000)
               const hexStyle = getEventColorStyle(evt.calendarColor)
@@ -1338,12 +1373,15 @@ export function CalendarClient({
               skillTags={skillTags}
               onTagSkill={handleTagSkill}
               onRemoveSkillTag={handleRemoveSkillTag}
+              holidays={holidays}
             />
           )}
           {view === 'year' && (
             <YearView currentDate={currentDate} events={visibleEvents} holidays={holidays} />
           )}
-          {view === 'agenda' && <AgendaView currentDate={currentDate} events={visibleEvents} />}
+          {view === 'agenda' && (
+            <AgendaView currentDate={currentDate} events={visibleEvents} holidays={holidays} />
+          )}
         </div>
 
         {/* New Activity Modal (AC1, AC2 Story 5.7 / Story 10.4)
