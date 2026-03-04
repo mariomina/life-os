@@ -64,6 +64,7 @@ export async function createActivity(formData: FormData): Promise<ActionResult> 
   const duration = Number(formData.get('duration') ?? 30)
   const areaId = (formData.get('areaId') as string | null) ?? ''
   const calendarId = (formData.get('calendarId') as string | null) || null
+  const description = (formData.get('description') as string | null)?.trim() || null
 
   // Recurrence fields
   const recurrenceType = ((formData.get('recurrenceType') as string | null) ??
@@ -100,6 +101,7 @@ export async function createActivity(formData: FormData): Promise<ActionResult> 
     const baseFields = {
       userId,
       title: trimmedTitle,
+      description,
       scheduledDurationMinutes: durationMinutes,
       areaId: areaId && UUID_REGEX.test(areaId) ? areaId : null,
       calendarId: calendarId ?? null,

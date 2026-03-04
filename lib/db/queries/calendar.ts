@@ -15,15 +15,18 @@ import type { TEventColor } from '@/lib/calendar/calendar-utils'
 export interface ActivityForCalendar {
   id: string
   title: string
+  description: string | null
   scheduledAt: Date
   scheduledDurationMinutes: number | null
   status: string
+  planned: boolean
   areaName: string | null
   areaColor: TEventColor
   habitTitle: string | null
   habitId: string | null
   calendarId: string | null
   calendarColor: string | null // hex — tiene precedencia sobre areaColor en la UI
+  calendarName: string | null
 }
 
 // ─── Color mapping ────────────────────────────────────────────────────────────
@@ -86,6 +89,7 @@ export async function getActivitiesForDay(
       habitTitle: habits.title,
       calendarId: calendars.id,
       calendarColor: calendars.color,
+      calendarName: calendars.name,
     })
     .from(stepsActivities)
     .leftJoin(areas, eq(stepsActivities.areaId, areas.id))
@@ -103,15 +107,18 @@ export async function getActivitiesForDay(
   return rows.map((row) => ({
     id: row.activity.id,
     title: row.activity.title,
+    description: row.activity.description ?? null,
     scheduledAt: row.activity.scheduledAt!,
     scheduledDurationMinutes: row.activity.scheduledDurationMinutes,
     status: row.activity.status,
+    planned: row.activity.planned,
     areaName: row.areaName ?? null,
     areaColor: maslowLevelToColor(row.areaLevel ?? null),
     habitTitle: row.habitTitle ?? null,
     habitId: row.activity.habitId,
     calendarId: row.calendarId ?? null,
     calendarColor: row.calendarColor ?? null,
+    calendarName: row.calendarName ?? null,
   }))
 }
 
@@ -165,6 +172,7 @@ export async function getActivitiesForWeek(
       habitTitle: habits.title,
       calendarId: calendars.id,
       calendarColor: calendars.color,
+      calendarName: calendars.name,
     })
     .from(stepsActivities)
     .leftJoin(areas, eq(stepsActivities.areaId, areas.id))
@@ -182,15 +190,18 @@ export async function getActivitiesForWeek(
   return rows.map((row) => ({
     id: row.activity.id,
     title: row.activity.title,
+    description: row.activity.description ?? null,
     scheduledAt: row.activity.scheduledAt!,
     scheduledDurationMinutes: row.activity.scheduledDurationMinutes,
     status: row.activity.status,
+    planned: row.activity.planned,
     areaName: row.areaName ?? null,
     areaColor: maslowLevelToColor(row.areaLevel ?? null),
     habitTitle: row.habitTitle ?? null,
     habitId: row.activity.habitId,
     calendarId: row.calendarId ?? null,
     calendarColor: row.calendarColor ?? null,
+    calendarName: row.calendarName ?? null,
   }))
 }
 
@@ -230,6 +241,7 @@ export async function getActivitiesForMonth(
       habitTitle: habits.title,
       calendarId: calendars.id,
       calendarColor: calendars.color,
+      calendarName: calendars.name,
     })
     .from(stepsActivities)
     .leftJoin(areas, eq(stepsActivities.areaId, areas.id))
@@ -247,15 +259,18 @@ export async function getActivitiesForMonth(
   return rows.map((row) => ({
     id: row.activity.id,
     title: row.activity.title,
+    description: row.activity.description ?? null,
     scheduledAt: row.activity.scheduledAt!,
     scheduledDurationMinutes: row.activity.scheduledDurationMinutes,
     status: row.activity.status,
+    planned: row.activity.planned,
     areaName: row.areaName ?? null,
     areaColor: maslowLevelToColor(row.areaLevel ?? null),
     habitTitle: row.habitTitle ?? null,
     habitId: row.activity.habitId,
     calendarId: row.calendarId ?? null,
     calendarColor: row.calendarColor ?? null,
+    calendarName: row.calendarName ?? null,
   }))
 }
 
@@ -290,6 +305,7 @@ export async function getActivitiesForRange(
       habitTitle: habits.title,
       calendarId: calendars.id,
       calendarColor: calendars.color,
+      calendarName: calendars.name,
     })
     .from(stepsActivities)
     .leftJoin(areas, eq(stepsActivities.areaId, areas.id))
@@ -307,15 +323,18 @@ export async function getActivitiesForRange(
   return rows.map((row) => ({
     id: row.activity.id,
     title: row.activity.title,
+    description: row.activity.description ?? null,
     scheduledAt: row.activity.scheduledAt!,
     scheduledDurationMinutes: row.activity.scheduledDurationMinutes,
     status: row.activity.status,
+    planned: row.activity.planned,
     areaName: row.areaName ?? null,
     areaColor: maslowLevelToColor(row.areaLevel ?? null),
     habitTitle: row.habitTitle ?? null,
     habitId: row.activity.habitId,
     calendarId: row.calendarId ?? null,
     calendarColor: row.calendarColor ?? null,
+    calendarName: row.calendarName ?? null,
   }))
 }
 
@@ -444,6 +463,7 @@ export async function getActivitiesForYear(
       habitTitle: habits.title,
       calendarId: calendars.id,
       calendarColor: calendars.color,
+      calendarName: calendars.name,
     })
     .from(stepsActivities)
     .leftJoin(areas, eq(stepsActivities.areaId, areas.id))
@@ -461,14 +481,17 @@ export async function getActivitiesForYear(
   return rows.map((row) => ({
     id: row.activity.id,
     title: row.activity.title,
+    description: row.activity.description ?? null,
     scheduledAt: row.activity.scheduledAt!,
     scheduledDurationMinutes: row.activity.scheduledDurationMinutes,
     status: row.activity.status,
+    planned: row.activity.planned,
     areaName: row.areaName ?? null,
     areaColor: maslowLevelToColor(row.areaLevel ?? null),
     habitTitle: row.habitTitle ?? null,
     habitId: row.activity.habitId,
     calendarId: row.calendarId ?? null,
     calendarColor: row.calendarColor ?? null,
+    calendarName: row.calendarName ?? null,
   }))
 }

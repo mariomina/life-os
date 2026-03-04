@@ -51,10 +51,12 @@ export default async function CalendarPage() {
           start,
           end: new Date(start.getTime() + durationMs),
           color: a.areaColor,
-          description: a.areaName ?? undefined,
+          description: a.description ?? undefined,
+          planned: a.planned,
           // Story 10.2: calendarColor tiene precedencia sobre areaColor en la UI
           calendarId: a.calendarId ?? undefined,
           calendarColor: a.calendarColor ?? undefined,
+          calendarName: a.calendarName ?? undefined,
         }
       })
   } else {

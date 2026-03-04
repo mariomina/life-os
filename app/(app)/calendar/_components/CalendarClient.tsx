@@ -136,8 +136,8 @@ function getEventColorStyle(calendarColor: string | undefined): React.CSSPropert
 
 // ─── Time Budget helpers ───────────────────────────────────────────────────────
 
-const AVAILABLE_MINUTES = 16 * 60 // 6:00–22:00 = 960 min (daily)
-const AVAILABLE_WEEKLY_MINUTES = 16 * 60 * 7 // 16h × 7 days = 6720 min (weekly)
+const AVAILABLE_MINUTES = 24 * 60 // 24h = 1440 min (daily)
+const AVAILABLE_WEEKLY_MINUTES = 24 * 60 * 7 // 24h × 7 days = 10080 min (weekly)
 
 export function calcTimeBudget(events: ICalendarEvent[]) {
   const committed = events.reduce((acc, e) => {
@@ -666,52 +666,73 @@ function DayView({
 
   return (
     <div className="overflow-auto">
-      {hours.map((hour) => {
-        // AC3 fix: local hours for correct timezone display
-        const slotEvents = dayEvents.filter((e) => e.start.getHours() === hour.getHours())
-        return (
-          <div key={hour.toISOString()} className="flex border-b border-border/50 min-h-14">
-            <div className="w-16 p-1 pr-2 text-right text-xs text-muted-foreground shrink-0">
+      {/* 24h grid with absolute-positioned event spanning */}
+      <div className="relative" style={{ height: `${24 * ROW_H}px` }}>
+        {/* Background: hour rows for grid lines + click areas */}
+        {hours.map((hour) => (
+          <div
+            key={hour.toISOString()}
+            className="absolute left-0 right-0 flex border-b border-border/50"
+            style={{ top: `${hour.getHours() * ROW_H}px`, height: `${ROW_H}px` }}
+          >
+            <div className="w-16 p-1 pr-2 text-right text-xs text-muted-foreground shrink-0 self-start">
               {format(hour, 'HH:mm')}
             </div>
             <div
-              className="flex-1 border-l border-border/50 p-1 space-y-0.5 cursor-pointer hover:bg-primary/5 transition-colors"
+              className="flex-1 border-l border-border/50 cursor-pointer hover:bg-primary/5 transition-colors"
               onClick={() => onSlotClick(currentDate, hour.getHours())}
-            >
-              {slotEvents.map((evt) => {
-                const completedSeconds = timeTotals[evt.id] ?? 0
-                const startedAt = timerStartedAt.get(evt.id)
-                const isRunningTimer =
-                  activeTimers.get(evt.id) !== undefined &&
-                  !activeTimers.get(evt.id)!.isPaused &&
-                  startedAt !== undefined
-                // Live elapsed: completed + currently running session (Story 5.9)
-                const elapsedSeconds = isRunningTimer
-                  ? calcElapsedSeconds(startedAt!, new Date(elapsedTick))
-                  : 0
-                const totalForDisplay = completedSeconds + elapsedSeconds
-                const formattedTime = isRunningTimer
-                  ? formatElapsed(totalForDisplay)
-                  : formatSeconds(completedSeconds)
-                const hexStyle = getEventColorStyle(evt.calendarColor)
-                return (
-                  <div
-                    key={evt.id}
-                    data-event
-                    className={`group text-sm rounded border-l-2 px-2 py-1 ${hexStyle ? '' : EVENT_COLOR_CLASSES[evt.color ?? 'blue']}`}
-                    style={hexStyle}
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium">{evt.title}</span>
-                      {formattedTime && (
-                        <span
-                          className={`text-[10px] font-mono ${isRunningTimer ? 'text-primary animate-pulse' : 'text-muted-foreground'}`}
-                        >
-                          ⏱ {formattedTime}
-                        </span>
-                      )}
-                    </div>
+            />
+          </div>
+        ))}
+
+        {/* Events overlay — absolutely positioned, span full duration */}
+        <div className="absolute left-16 right-0 top-0 bottom-0 pointer-events-none">
+          {dayEvents.map((evt) => {
+            const startH = evt.start.getHours() + evt.start.getMinutes() / 60
+            const durationH = Math.max(0.5, (evt.end.getTime() - evt.start.getTime()) / 3600000)
+            const top = startH * ROW_H
+            const height = Math.min(durationH, 24 - startH) * ROW_H
+
+            const completedSeconds = timeTotals[evt.id] ?? 0
+            const startedAt = timerStartedAt.get(evt.id)
+            const isRunningTimer =
+              activeTimers.get(evt.id) !== undefined &&
+              !activeTimers.get(evt.id)!.isPaused &&
+              startedAt !== undefined
+            const elapsedSeconds = isRunningTimer
+              ? calcElapsedSeconds(startedAt!, new Date(elapsedTick))
+              : 0
+            const totalForDisplay = completedSeconds + elapsedSeconds
+            const formattedTime = isRunningTimer
+              ? formatElapsed(totalForDisplay)
+              : formatSeconds(completedSeconds)
+            const hexStyle = getEventColorStyle(evt.calendarColor)
+
+            return (
+              <div
+                key={evt.id}
+                data-event
+                className={`absolute left-0.5 right-0.5 text-sm rounded border-l-2 px-2 py-1 overflow-hidden pointer-events-auto ${hexStyle ? '' : EVENT_COLOR_CLASSES[evt.color ?? 'blue']}`}
+                style={{ top, height, ...(hexStyle ?? {}) }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex items-center gap-2">
+                  <span className="font-medium truncate">{evt.title}</span>
+                  {formattedTime && (
+                    <span
+                      className={`text-[10px] font-mono shrink-0 ${isRunningTimer ? 'text-primary animate-pulse' : 'text-muted-foreground'}`}
+                    >
+                      ⏱ {formattedTime}
+                    </span>
+                  )}
+                </div>
+                {evt.description && height >= 56 && (
+                  <div className="text-[11px] text-muted-foreground leading-tight mt-0.5 line-clamp-2">
+                    {evt.description}
+                  </div>
+                )}
+                {height >= 48 && (
+                  <>
                     <EventActionButtons
                       evt={evt}
                       onCheckin={handleCheckin}
@@ -729,13 +750,13 @@ function DayView({
                       onTagSkill={onTagSkill}
                       onRemoveSkillTag={onRemoveSkillTag}
                     />
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-        )
-      })}
+                  </>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      </div>
     </div>
   )
 }
@@ -801,9 +822,18 @@ function AgendaView({ currentDate, events }: { currentDate: Date; events: ICalen
   )
 }
 
-function YearView({ currentDate, events }: { currentDate: Date; events: ICalendarEvent[] }) {
+function YearView({
+  currentDate,
+  events,
+  holidays = [],
+}: {
+  currentDate: Date
+  events: ICalendarEvent[]
+  holidays?: Holiday[]
+}) {
   const year = currentDate.getFullYear()
   const months = Array.from({ length: 12 }, (_, i) => new Date(year, i, 1))
+  const holidayMap = new Map(holidays.map((h) => [h.date, h.name]))
 
   return (
     <div className="grid grid-cols-3 gap-4 p-4">
@@ -820,23 +850,38 @@ function YearView({ currentDate, events }: { currentDate: Date; events: ICalenda
                 </div>
               ))}
               {days.map((day) => {
-                const dayEventCount = getEventsForDay(events, day).length
                 const inMonth = isSameMonth(day, monthDate)
-                // Heatmap: 4 intensity levels based on event count (AC3 Story 5.5)
+                const dayKey = format(day, 'yyyy-MM-dd')
+                const isHoliday = !!holidayMap.get(dayKey)
+                const dayAllEvents = getEventsForDay(events, day)
+                // Solo contar actividades espontáneas (planned=false) para el heatmap
+                const spontaneousCount = dayAllEvents.filter((e) => e.planned === false).length
+                const hasBirthday = dayAllEvents.some((e) =>
+                  e.calendarName?.toLowerCase().includes('cumpleaños')
+                )
+
+                // Prioridad visual: today > holiday > birthday > heatmap espontáneo
                 const heatClass = isToday(day)
                   ? 'bg-primary text-primary-foreground font-bold'
                   : !inMonth
                     ? 'text-muted-foreground/30'
-                    : dayEventCount === 0
-                      ? 'text-foreground'
-                      : dayEventCount <= 2
-                        ? 'bg-primary/30 text-foreground'
-                        : dayEventCount <= 5
-                          ? 'bg-primary/60 text-foreground'
-                          : 'bg-primary text-primary-foreground'
+                    : isHoliday
+                      ? 'bg-orange-400/70 text-white dark:bg-orange-600/60 dark:text-white'
+                      : hasBirthday
+                        ? 'bg-pink-400/70 text-white dark:bg-pink-600/60 dark:text-white'
+                        : spontaneousCount === 0
+                          ? 'text-foreground'
+                          : spontaneousCount <= 2
+                            ? 'bg-primary/30 text-foreground'
+                            : spontaneousCount <= 5
+                              ? 'bg-primary/60 text-foreground'
+                              : 'bg-primary text-primary-foreground'
                 return (
                   <div
                     key={day.toISOString()}
+                    title={
+                      isHoliday ? holidayMap.get(dayKey) : hasBirthday ? 'Cumpleaños' : undefined
+                    }
                     className={`text-center text-[10px] leading-5 rounded-full ${heatClass}`}
                   >
                     {inMonth ? format(day, 'd') : ''}
@@ -1273,7 +1318,9 @@ export function CalendarClient({
               onRemoveSkillTag={handleRemoveSkillTag}
             />
           )}
-          {view === 'year' && <YearView currentDate={currentDate} events={visibleEvents} />}
+          {view === 'year' && (
+            <YearView currentDate={currentDate} events={visibleEvents} holidays={holidays} />
+          )}
           {view === 'agenda' && <AgendaView currentDate={currentDate} events={visibleEvents} />}
         </div>
 

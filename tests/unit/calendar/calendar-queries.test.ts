@@ -55,15 +55,18 @@ function makeActivity(overrides: Partial<ActivityForCalendar>): ActivityForCalen
   return {
     id: 'act-1',
     title: 'Test activity',
+    description: null,
     scheduledAt: new Date('2024-01-15T09:00:00Z'),
     scheduledDurationMinutes: 30,
     status: 'pending',
+    planned: false,
     areaName: null,
     areaColor: 'blue',
     habitTitle: null,
     habitId: null,
     calendarId: null,
     calendarColor: null,
+    calendarName: null,
     ...overrides,
   }
 }

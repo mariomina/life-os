@@ -85,6 +85,9 @@ export function NewActivityModal({ onClose, defaultDate, calendars = [] }: NewAc
   const [recurrenceCount, setRecurrenceCount] = useState(RECURRENCE_DEFAULTS.weekly)
   const [recurrenceEndDate, setRecurrenceEndDate] = useState(() => defaultEndDate(defaultDate))
 
+  // Description state
+  const [description, setDescription] = useState('')
+
   // Custom recurrence state (Story 10.7)
   const [customInterval, setCustomInterval] = useState(1)
   const [customUnit, setCustomUnit] = useState<RecurrenceUnit>('week')
@@ -221,6 +224,22 @@ export function NewActivityModal({ onClose, defaultDate, calendars = [] }: NewAc
             maxLength={100}
             placeholder="Ej. Revisión semanal"
             className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+          />
+        </div>
+
+        {/* Description */}
+        <div className="space-y-1">
+          <label htmlFor="description" className="text-sm font-medium text-foreground">
+            Descripción
+          </label>
+          <textarea
+            id="description"
+            name="description"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="Notas opcionales..."
+            rows={2}
+            className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none"
           />
         </div>
 
