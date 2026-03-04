@@ -16,6 +16,7 @@ import {
 import { getUserSkills, getSkillTagsForActivities } from '@/lib/db/queries/skills'
 import { getCalendarsForUser, seedDefaultCalendars } from '@/actions/calendars'
 import { getHolidaysForUser } from '@/lib/db/queries/holidays'
+import { autoSyncHolidaysIfNeeded } from '@/actions/holidays'
 import type { ICalendarEvent } from '@/lib/calendar/calendar-utils'
 
 export default async function CalendarPage() {
@@ -30,6 +31,13 @@ export default async function CalendarPage() {
 
   // Seed default calendars on first visit if user has none
   await seedDefaultCalendars()
+
+  // Auto-sync Ecuador public holidays for current and next year (best-effort, non-blocking)
+  const currentYear = new Date().getFullYear()
+  await Promise.allSettled([
+    autoSyncHolidaysIfNeeded(user.id, currentYear),
+    autoSyncHolidaysIfNeeded(user.id, currentYear + 1),
+  ])
 
   // Fetch activities, calendars and holidays in parallel
   let events: ICalendarEvent[] = []
