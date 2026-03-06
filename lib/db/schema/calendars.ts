@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, boolean, timestamp, index } from 'drizzle-orm/pg-core'
+import { pgTable, uuid, text, boolean, integer, timestamp, index } from 'drizzle-orm/pg-core'
 
 /**
  * Calendarios personalizados del usuario — Epic 10.
@@ -18,6 +18,8 @@ export const calendars = pgTable(
     /** Color hex: '#4285F4' */
     color: text('color').notNull(),
     isDefault: boolean('is_default').default(false).notNull(),
+    /** Display order in sidebar (Story 10.10) */
+    position: integer('position').default(0).notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },

@@ -39,6 +39,7 @@ import {
   getWeekRange,
 } from '@/lib/calendar/calendar-utils'
 import { NewActivityModal } from './NewActivityModal'
+import { EditActivityModal } from './EditActivityModal'
 import { CalendarSidebar } from './CalendarSidebar'
 import { createSupabaseBrowserClient } from '@/lib/supabase/client'
 import type { Skill } from '@/lib/db/schema/skills'
@@ -428,14 +429,17 @@ function WeekView({
   events,
   onSlotClick,
   onEventClick,
+  onEventDrop,
   holidays = [],
 }: {
   currentDate: Date
   events: ICalendarEvent[]
   onSlotClick: (day: Date, hour: number) => void
   onEventClick: (evt: ICalendarEvent, day: Date, totalDayEvents: number) => void
+  onEventDrop: (eventId: string, day: Date, hour: number) => void
   holidays?: Holiday[]
 }) {
+  const [dragOver, setDragOver] = useState<{ dayKey: string; hour: number } | null>(null)
   const weekStart = startOfWeek(currentDate, { weekStartsOn: 1 })
   const weekDays = eachDayOfInterval({
     start: weekStart,
@@ -477,6 +481,45 @@ function WeekView({
         })}
       </div>
 
+      {/* All-day events row — one row per unique all-day event across the week */}
+      {weekDays.some((day) => getEventsForDay(events, day).some((e) => e.isAllDay)) && (
+        <div className="grid grid-cols-8 border-b border-border bg-muted/5">
+          <div className="p-1 text-right text-[10px] text-muted-foreground self-center pr-2 leading-tight">
+            Todo
+            <br />
+            el día
+          </div>
+          {weekDays.map((day) => {
+            const allDayEvts = getEventsForDay(events, day).filter((e) => e.isAllDay)
+            return (
+              <div
+                key={day.toISOString()}
+                className="border-l border-border/50 p-0.5 flex flex-col gap-0.5 min-h-[20px]"
+              >
+                {allDayEvts.map((evt) => {
+                  const color = evt.calendarColor ?? '#6366f1'
+                  return (
+                    <button
+                      key={evt.id}
+                      onClick={() => onEventClick(evt, day, allDayEvts.length)}
+                      title={evt.title}
+                      className="w-full rounded px-1 py-0.5 text-[10px] font-semibold truncate text-left hover:brightness-110 transition-all"
+                      style={{
+                        backgroundColor: color + '22',
+                        color,
+                        borderLeft: `2px solid ${color}`,
+                      }}
+                    >
+                      {evt.title}
+                    </button>
+                  )
+                })}
+              </div>
+            )
+          })}
+        </div>
+      )}
+
       {/* Time grid */}
       <div className="relative" style={{ height: `${24 * ROW_H}px` }}>
         {/* Background: hour rows for grid lines + slot click areas */}
@@ -489,13 +532,27 @@ function WeekView({
             <div className="p-1 pr-2 text-right text-xs text-muted-foreground self-start">
               {format(hour, 'HH:mm')}
             </div>
-            {weekDays.map((day) => (
-              <div
-                key={day.toISOString()}
-                className="border-l border-border/50 cursor-pointer hover:bg-primary/5 transition-colors"
-                onClick={() => onSlotClick(day, hour.getHours())}
-              />
-            ))}
+            {weekDays.map((day) => {
+              const isDragTarget =
+                dragOver?.dayKey === day.toISOString() && dragOver?.hour === hour.getHours()
+              return (
+                <div
+                  key={day.toISOString()}
+                  className={`border-l border-border/50 cursor-pointer transition-colors ${isDragTarget ? 'bg-primary/15' : 'hover:bg-primary/5'}`}
+                  onClick={() => onSlotClick(day, hour.getHours())}
+                  onDragOver={(e) => {
+                    e.preventDefault()
+                    setDragOver({ dayKey: day.toISOString(), hour: hour.getHours() })
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault()
+                    const eventId = e.dataTransfer.getData('text/plain')
+                    if (eventId) onEventDrop(eventId, day, hour.getHours())
+                    setDragOver(null)
+                  }}
+                />
+              )
+            })}
           </div>
         ))}
 
@@ -503,7 +560,7 @@ function WeekView({
         <div className="absolute inset-0 grid grid-cols-8 pointer-events-none">
           <div /> {/* time gutter spacer */}
           {weekDays.map((day) => {
-            const dayEvents = getEventsForDay(events, day)
+            const dayEvents = getEventsForDay(events, day).filter((e) => !e.isAllDay)
             return (
               <div
                 key={day.toISOString()}
@@ -522,7 +579,13 @@ function WeekView({
                     <div
                       key={evt.id}
                       data-event
-                      className={`absolute left-0.5 right-0.5 rounded border-l-2 px-1 py-0.5 text-xs overflow-hidden pointer-events-auto cursor-pointer hover:brightness-110 transition-all ${
+                      draggable
+                      onDragStart={(e) => {
+                        e.dataTransfer.setData('text/plain', evt.id)
+                        e.stopPropagation()
+                      }}
+                      onDragEnd={() => setDragOver(null)}
+                      className={`absolute left-0.5 right-0.5 rounded border-l-2 px-1 py-0.5 text-xs overflow-hidden pointer-events-auto cursor-grab active:cursor-grabbing hover:brightness-110 transition-all ${
                         hexStyle ? '' : EVENT_COLOR_CLASSES[evt.color ?? 'blue']
                       }`}
                       style={{ top, height, ...(hexStyle ?? {}) }}
@@ -553,10 +616,14 @@ function MonthView({
   currentDate,
   events,
   holidays = [],
+  onSlotClick,
+  onEventClick,
 }: {
   currentDate: Date
   events: ICalendarEvent[]
   holidays?: Holiday[]
+  onSlotClick?: (date: Date) => void
+  onEventClick?: (evt: ICalendarEvent) => void
 }) {
   const days = getMonthGridDays(currentDate)
   const dayNames = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
@@ -583,7 +650,8 @@ function MonthView({
             <div
               key={day.toISOString()}
               title={holidayName}
-              className={`min-h-24 border-b border-r border-border p-1 ${
+              onClick={() => onSlotClick?.(day)}
+              className={`group relative min-h-24 border-b border-r border-border p-1 cursor-pointer transition-colors hover:bg-muted/40 ${
                 !inCurrentMonth
                   ? 'bg-muted/30'
                   : holidayName
@@ -591,17 +659,41 @@ function MonthView({
                     : ''
               }`}
             >
-              <span
-                className={`text-xs font-medium inline-flex items-center justify-center w-6 h-6 rounded-full ${
-                  isToday(day)
-                    ? 'bg-primary text-primary-foreground'
-                    : inCurrentMonth
-                      ? 'text-foreground'
-                      : 'text-muted-foreground'
-                }`}
-              >
-                {format(day, 'd')}
-              </span>
+              {/* Header row: number + "+" button */}
+              <div className="flex items-center justify-between">
+                <span
+                  className={`text-xs font-medium inline-flex items-center justify-center w-6 h-6 rounded-full ${
+                    isToday(day)
+                      ? 'bg-primary text-primary-foreground'
+                      : inCurrentMonth
+                        ? 'text-foreground'
+                        : 'text-muted-foreground'
+                  }`}
+                >
+                  {format(day, 'd')}
+                </span>
+                {inCurrentMonth && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onSlotClick?.(day)
+                    }}
+                    aria-label={`Nueva actividad el ${format(day, 'd MMM')}`}
+                    className="opacity-0 group-hover:opacity-100 transition-opacity h-4 w-4 rounded-full flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted"
+                  >
+                    <svg viewBox="0 0 12 12" className="h-3 w-3" fill="currentColor">
+                      <path
+                        d="M6 1v10M1 6h10"
+                        stroke="currentColor"
+                        strokeWidth="1.5"
+                        strokeLinecap="round"
+                      />
+                    </svg>
+                  </button>
+                )}
+              </div>
+
               {/* Story 10.6 — Holiday badge */}
               {inCurrentMonth && holidayName && (
                 <div className="text-[9px] text-orange-600 dark:text-orange-400 bg-orange-100 dark:bg-orange-900/40 rounded px-0.5 mt-0.5 truncate leading-tight">
@@ -616,17 +708,31 @@ function MonthView({
                 {dayEvents.slice(0, 3).map((evt) => {
                   const hexStyle = getEventColorStyle(evt.calendarColor)
                   return (
-                    <div
+                    <button
                       key={evt.id}
-                      className={`text-xs rounded px-1 truncate border-l-2 ${hexStyle ? '' : EVENT_COLOR_CLASSES[evt.color ?? 'blue']}`}
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onEventClick?.(evt)
+                      }}
+                      className={`w-full text-left text-xs rounded px-1 truncate border-l-2 hover:brightness-110 transition-all ${hexStyle ? '' : EVENT_COLOR_CLASSES[evt.color ?? 'blue']}`}
                       style={hexStyle}
                     >
                       {evt.title}
-                    </div>
+                    </button>
                   )
                 })}
                 {dayEvents.length > 3 && (
-                  <div className="text-xs text-muted-foreground">+{dayEvents.length - 3} más</div>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onSlotClick?.(day)
+                    }}
+                    className="text-xs text-muted-foreground hover:text-foreground"
+                  >
+                    +{dayEvents.length - 3} más
+                  </button>
                 )}
               </div>
             </div>
@@ -641,6 +747,8 @@ function DayView({
   currentDate,
   events,
   onSlotClick,
+  onEventClick,
+  onEventDrop,
   onDelete,
   timeTotals,
   activeTimers,
@@ -659,6 +767,8 @@ function DayView({
   currentDate: Date
   events: ICalendarEvent[]
   onSlotClick: (date: Date, hour: number) => void
+  onEventClick: (evt: ICalendarEvent) => void
+  onEventDrop: (eventId: string, day: Date, hour: number) => void
   onDelete: (id: string) => void
   timeTotals: Record<string, number>
   activeTimers: Map<string, TimerState>
@@ -678,8 +788,10 @@ function DayView({
   holidays?: Holiday[]
 }) {
   const router = useRouter()
+  const [dragOverHour, setDragOverHour] = useState<number | null>(null)
   const hours = getDayHourSlots(currentDate, 0, 24)
-  const dayEvents = getEventsForDay(events, currentDate)
+  const allDayForDay = getEventsForDay(events, currentDate).filter((e) => e.isAllDay)
+  const dayEvents = getEventsForDay(events, currentDate).filter((e) => !e.isAllDay)
   const holidayMap = new Map(holidays.map((h) => [h.date, h.name]))
   const holidayName = holidayMap.get(format(currentDate, 'yyyy-MM-dd'))
 
@@ -696,6 +808,28 @@ function DayView({
           <span className="text-xs opacity-70">— Feriado Ecuador</span>
         </div>
       )}
+      {/* All-day event banners — same style as holiday banner */}
+      {allDayForDay.map((evt) => {
+        const color = evt.calendarColor ?? '#6366f1'
+        return (
+          <button
+            key={evt.id}
+            onClick={() => onEventClick(evt)}
+            className="w-full flex items-center gap-2 px-4 py-2 border-b text-sm font-semibold text-left hover:brightness-110 transition-all"
+            style={{
+              backgroundColor: color + '22',
+              borderColor: color + '55',
+              color,
+            }}
+          >
+            <span>{evt.title}</span>
+            {evt.calendarName && (
+              <span className="text-xs font-normal opacity-70">— {evt.calendarName}</span>
+            )}
+          </button>
+        )
+      })}
+
       {/* 24h grid with absolute-positioned event spanning */}
       <div className="relative" style={{ height: `${24 * ROW_H}px` }}>
         {/* Background: hour rows for grid lines + click areas */}
@@ -709,8 +843,18 @@ function DayView({
               {format(hour, 'HH:mm')}
             </div>
             <div
-              className="flex-1 border-l border-border/50 cursor-pointer hover:bg-primary/5 transition-colors"
+              className={`flex-1 border-l border-border/50 cursor-pointer transition-colors ${dragOverHour === hour.getHours() ? 'bg-primary/15' : 'hover:bg-primary/5'}`}
               onClick={() => onSlotClick(currentDate, hour.getHours())}
+              onDragOver={(e) => {
+                e.preventDefault()
+                setDragOverHour(hour.getHours())
+              }}
+              onDrop={(e) => {
+                e.preventDefault()
+                const eventId = e.dataTransfer.getData('text/plain')
+                if (eventId) onEventDrop(eventId, currentDate, hour.getHours())
+                setDragOverHour(null)
+              }}
             />
           </div>
         ))}
@@ -742,9 +886,19 @@ function DayView({
               <div
                 key={evt.id}
                 data-event
-                className={`absolute left-0.5 right-0.5 text-sm rounded border-l-2 px-2 py-1 overflow-hidden pointer-events-auto ${hexStyle ? '' : EVENT_COLOR_CLASSES[evt.color ?? 'blue']}`}
+                draggable
+                onDragStart={(e) => {
+                  e.dataTransfer.setData('text/plain', evt.id)
+                  e.stopPropagation()
+                }}
+                onDragEnd={() => setDragOverHour(null)}
+                className={`absolute left-0.5 right-0.5 text-sm rounded border-l-2 px-2 py-1 overflow-hidden pointer-events-auto cursor-grab active:cursor-grabbing hover:brightness-105 transition-all ${hexStyle ? '' : EVENT_COLOR_CLASSES[evt.color ?? 'blue']}`}
                 style={{ top, height, ...(hexStyle ?? {}) }}
-                onClick={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  if ((e.target as HTMLElement).closest('button,select')) return
+                  e.stopPropagation()
+                  onEventClick(evt)
+                }}
               >
                 <div className="flex items-center gap-2">
                   <span className="font-medium truncate">{evt.title}</span>
@@ -795,10 +949,12 @@ function AgendaView({
   currentDate,
   events,
   holidays = [],
+  onEventClick,
 }: {
   currentDate: Date
   events: ICalendarEvent[]
   holidays?: Holiday[]
+  onEventClick: (evt: ICalendarEvent) => void
 }) {
   const next30Days = eachDayOfInterval({
     start: currentDate,
@@ -854,8 +1010,9 @@ function AgendaView({
               return (
                 <div
                   key={evt.id}
-                  className={`text-sm rounded border-l-2 px-3 py-1.5 flex items-center gap-3 ${hexStyle ? '' : EVENT_COLOR_CLASSES[evt.color ?? 'blue']}`}
+                  className={`text-sm rounded border-l-2 px-3 py-1.5 flex items-center gap-3 cursor-pointer hover:brightness-105 transition-all ${hexStyle ? '' : EVENT_COLOR_CLASSES[evt.color ?? 'blue']}`}
                   style={hexStyle}
+                  onClick={() => onEventClick(evt)}
                 >
                   <span className="text-xs text-muted-foreground shrink-0">
                     {format(evt.start, 'HH:mm')} · {formatDuration(durationMin)}
@@ -880,10 +1037,12 @@ function YearView({
   currentDate,
   events,
   holidays = [],
+  onDayClick,
 }: {
   currentDate: Date
   events: ICalendarEvent[]
   holidays?: Holiday[]
+  onDayClick?: (date: Date) => void
 }) {
   const year = currentDate.getFullYear()
   const months = Array.from({ length: 12 }, (_, i) => new Date(year, i, 1))
@@ -931,15 +1090,24 @@ function YearView({
                               ? 'bg-primary/60 text-foreground'
                               : 'bg-primary text-primary-foreground'
                 return (
-                  <div
+                  <button
                     key={day.toISOString()}
+                    type="button"
                     title={
-                      isHoliday ? holidayMap.get(dayKey) : hasBirthday ? 'Cumpleaños' : undefined
+                      isHoliday
+                        ? holidayMap.get(dayKey)
+                        : hasBirthday
+                          ? 'Cumpleaños'
+                          : inMonth
+                            ? `Ver día ${format(day, 'd MMM yyyy')}`
+                            : undefined
                     }
-                    className={`text-center text-[10px] leading-5 rounded-full ${heatClass}`}
+                    onClick={() => inMonth && onDayClick?.(day)}
+                    disabled={!inMonth}
+                    className={`text-center text-[10px] leading-5 rounded-full transition-transform ${inMonth ? 'cursor-pointer hover:scale-125 hover:ring-1 hover:ring-primary/50' : 'cursor-default'} ${heatClass}`}
                   >
                     {inMonth ? format(day, 'd') : ''}
-                  </div>
+                  </button>
                 )
               })}
             </div>
@@ -973,17 +1141,27 @@ export function CalendarClient({
   userSkills = [],
   initialSkillTags = {},
 }: CalendarClientProps) {
+  const router = useRouter()
   const [view, setView] = useState<TCalendarView>(defaultView)
   const [currentDate, setCurrentDate] = useState(new Date())
   const [isModalOpen, setIsModalOpen] = useState(false)
   // Story 10.4 — date+hour from clicking a grid slot (null = use currentDate)
   const [clickedSlot, setClickedSlot] = useState<Date | null>(null)
+  // Story 10.9 — selected event to edit/delete
+  const [selectedEvent, setSelectedEvent] = useState<ICalendarEvent | null>(null)
 
   // Story 10.2 AC3 — hidden calendars filter (state lives here, set by CalendarSidebar)
   const [hiddenCalendarIds, setHiddenCalendarIds] = useState<Set<string>>(new Set())
 
   // Filter events by hidden calendars
   const visibleEvents = events.filter((e) => !e.calendarId || !hiddenCalendarIds.has(e.calendarId))
+
+  // Story 10.10: si el calendario "Feriados/Festivos" está oculto, no mostrar festivos
+  const holidayCalendar = calendars?.find(
+    (c) => c.name.toLowerCase().includes('feriado') || c.name.toLowerCase().includes('festivo')
+  )
+  const visibleHolidays =
+    holidayCalendar && hiddenCalendarIds.has(holidayCalendar.id) ? [] : (holidays ?? [])
 
   const handleVisibilityChange = useCallback((hidden: Set<string>) => {
     setHiddenCalendarIds(new Set(hidden))
@@ -997,13 +1175,51 @@ export function CalendarClient({
     setIsModalOpen(true)
   }, [])
 
-  // Click on an event in WeekView → navigate to DayView for that day
-  const handleEventClick = useCallback(
-    (_evt: ICalendarEvent, day: Date, _totalDayEvents: number) => {
-      setCurrentDate(day)
-      setView('day')
+  // MonthView: click on a day cell → open new activity modal at 8:00
+  const handleMonthSlotClick = useCallback((date: Date) => {
+    const slot = new Date(date)
+    slot.setHours(8, 0, 0, 0)
+    setClickedSlot(slot)
+    setIsModalOpen(true)
+  }, [])
+
+  // YearView: click on a day → navigate to that day in DayView
+  const handleYearDayClick = useCallback((date: Date) => {
+    setCurrentDate(date)
+    setView('day')
+  }, [])
+
+  // Click on an event (WeekView, DayView, AgendaView) → open edit modal
+  const handleEventClick = useCallback((evt: ICalendarEvent) => {
+    setSelectedEvent(evt)
+  }, [])
+
+  // Click on an event in WeekView → open edit modal (wrapper with WeekView signature)
+  const handleWeekEventClick = useCallback(
+    (evt: ICalendarEvent, _day: Date, _totalDayEvents: number) => {
+      setSelectedEvent(evt)
     },
     []
+  )
+
+  // Story 10.11 — Drag & Drop: move an activity to a new day/hour
+  const handleDropEvent = useCallback(
+    async (eventId: string, targetDay: Date, targetHour: number) => {
+      const evt = visibleEvents.find((e) => e.id === eventId)
+      if (!evt) return
+      const { updateActivity } = await import('@/actions/calendar')
+      await updateActivity(eventId, {
+        title: evt.title,
+        description: evt.description ?? null,
+        date: format(targetDay, 'yyyy-MM-dd'),
+        time: `${String(targetHour).padStart(2, '0')}:00`,
+        duration: Math.round((evt.end.getTime() - evt.start.getTime()) / 60000),
+        areaId: evt.areaId ?? null,
+        calendarId: evt.calendarId ?? null,
+      })
+      router.refresh()
+    },
+    [visibleEvents, router]
   )
 
   // Timer state: Map<activityId, TimerState> — initialized from server-side active timers
@@ -1348,18 +1564,27 @@ export function CalendarClient({
               currentDate={currentDate}
               events={visibleEvents}
               onSlotClick={handleSlotClick}
-              onEventClick={handleEventClick}
-              holidays={holidays}
+              onEventClick={handleWeekEventClick}
+              onEventDrop={handleDropEvent}
+              holidays={visibleHolidays}
             />
           )}
           {view === 'month' && (
-            <MonthView currentDate={currentDate} events={visibleEvents} holidays={holidays} />
+            <MonthView
+              currentDate={currentDate}
+              events={visibleEvents}
+              holidays={visibleHolidays}
+              onSlotClick={handleMonthSlotClick}
+              onEventClick={handleEventClick}
+            />
           )}
           {view === 'day' && (
             <DayView
               currentDate={currentDate}
               events={visibleEvents}
               onSlotClick={handleSlotClick}
+              onEventClick={handleEventClick}
+              onEventDrop={handleDropEvent}
               onDelete={handleDelete}
               timeTotals={timeTotals}
               activeTimers={activeTimers}
@@ -1373,14 +1598,24 @@ export function CalendarClient({
               skillTags={skillTags}
               onTagSkill={handleTagSkill}
               onRemoveSkillTag={handleRemoveSkillTag}
-              holidays={holidays}
+              holidays={visibleHolidays}
             />
           )}
           {view === 'year' && (
-            <YearView currentDate={currentDate} events={visibleEvents} holidays={holidays} />
+            <YearView
+              currentDate={currentDate}
+              events={visibleEvents}
+              holidays={visibleHolidays}
+              onDayClick={handleYearDayClick}
+            />
           )}
           {view === 'agenda' && (
-            <AgendaView currentDate={currentDate} events={visibleEvents} holidays={holidays} />
+            <AgendaView
+              currentDate={currentDate}
+              events={visibleEvents}
+              holidays={visibleHolidays}
+              onEventClick={handleEventClick}
+            />
           )}
         </div>
 
@@ -1394,6 +1629,15 @@ export function CalendarClient({
               setClickedSlot(null)
             }}
             defaultDate={clickedSlot ?? currentDate}
+            calendars={calendars}
+          />
+        )}
+
+        {/* Edit Activity Modal (Story 10.9) */}
+        {selectedEvent && (
+          <EditActivityModal
+            event={selectedEvent}
+            onClose={() => setSelectedEvent(null)}
             calendars={calendars}
           />
         )}

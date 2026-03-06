@@ -1,7 +1,7 @@
 // lib/db/queries/calendars.ts
 // Queries para la tabla calendars — Epic 10: Calendarios Personalizados.
 
-import { eq, and, count, gte, lte, isNull, sql } from 'drizzle-orm'
+import { eq, and, count, gte, lte, isNull, sql, asc } from 'drizzle-orm'
 import { db, assertDatabaseUrl } from '@/lib/db/client'
 import { calendars } from '@/lib/db/schema/calendars'
 import { stepsActivities } from '@/lib/db/schema/steps-activities'
@@ -13,7 +13,7 @@ export type { Calendar, NewCalendar }
 // ─── Read ────────────────────────────────────────────────────────────────────
 
 /**
- * Returns all calendars for a user, ordered by created_at ASC.
+ * Returns all calendars for a user, ordered by position ASC.
  */
 export async function getCalendarsForUser(userId: string): Promise<Calendar[]> {
   assertDatabaseUrl()
@@ -21,7 +21,23 @@ export async function getCalendarsForUser(userId: string): Promise<Calendar[]> {
     .select()
     .from(calendars)
     .where(eq(calendars.userId, userId))
-    .orderBy(calendars.createdAt)
+    .orderBy(asc(calendars.position))
+}
+
+/**
+ * Reorders calendars for a user by setting position based on the provided ordered array of IDs.
+ * Story 10.10: drag-to-reorder in CalendarSidebar.
+ */
+export async function reorderCalendarsQuery(userId: string, orderedIds: string[]): Promise<void> {
+  assertDatabaseUrl()
+  await Promise.all(
+    orderedIds.map((id, index) =>
+      db
+        .update(calendars)
+        .set({ position: index, updatedAt: new Date() })
+        .where(and(eq(calendars.id, id), eq(calendars.userId, userId)))
+    )
+  )
 }
 
 /**
@@ -45,12 +61,19 @@ export async function getCalendarById(
 
 /**
  * Creates a new calendar for the user.
+ * Assigns position = max(existing positions) + 1 so it appears last in sidebar.
  */
 export async function createCalendar(
   userId: string,
   data: { name: string; color: string; isDefault?: boolean }
 ): Promise<Calendar> {
   assertDatabaseUrl()
+  const existing = await db
+    .select({ pos: calendars.position })
+    .from(calendars)
+    .where(eq(calendars.userId, userId))
+    .orderBy(asc(calendars.position))
+  const nextPosition = existing.length > 0 ? (existing[existing.length - 1].pos ?? 0) + 1 : 0
   const rows = await db
     .insert(calendars)
     .values({
@@ -58,6 +81,7 @@ export async function createCalendar(
       name: data.name,
       color: data.color,
       isDefault: data.isDefault ?? false,
+      position: nextPosition,
     })
     .returning()
   return rows[0]

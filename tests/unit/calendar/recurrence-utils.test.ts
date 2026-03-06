@@ -131,9 +131,9 @@ describe('generateOccurrences', () => {
     expect(result).toHaveLength(10)
   })
 
-  it('yearly count=15 is capped to MAX_OCCURRENCES=10', () => {
-    const result = generateOccurrences(BASE_DATE, makeOpts({ type: 'yearly', count: 15 }))
-    expect(result).toHaveLength(10)
+  it('yearly count=35 is capped to MAX_OCCURRENCES=30', () => {
+    const result = generateOccurrences(BASE_DATE, makeOpts({ type: 'yearly', count: 35 }))
+    expect(result).toHaveLength(30)
   })
 })
 
@@ -330,7 +330,7 @@ describe('describeRecurrence — custom type', () => {
     expect(result).toMatch(/2 semanas/)
   })
 
-  it('custom endType=never shows "hasta"', () => {
+  it('custom endType=never shows "próximos"', () => {
     const result = describeRecurrence(
       makeOpts({
         type: 'custom',
@@ -342,7 +342,7 @@ describe('describeRecurrence — custom type', () => {
       }),
       BASE_DATE
     )
-    expect(result).toMatch(/hasta/)
+    expect(result).toMatch(/próximos/)
   })
 
   it('custom excludeHolidays shows excl. festivos', () => {

@@ -112,7 +112,9 @@ export async function syncHolidaysForYear(
       .values(publicHolidays.map((h) => ({ userId, date: h.date, name: h.localName })))
       .onConflictDoNothing()
 
-    revalidatePath('/calendar')
+    // No llamamos revalidatePath aquí porque syncHolidaysForYear puede ser invocado
+    // durante el render SSR (desde autoSyncHolidaysIfNeeded en page.tsx).
+    // revalidatePath solo puede llamarse desde Server Actions activados por el cliente.
     return { synced: publicHolidays.length, error: null }
   } catch (err) {
     console.error('[syncHolidaysForYear] failed:', err)

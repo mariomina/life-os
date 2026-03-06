@@ -60,6 +60,7 @@ function makeActivity(overrides: Partial<ActivityForCalendar>): ActivityForCalen
     scheduledDurationMinutes: 30,
     status: 'pending',
     planned: false,
+    areaId: null,
     areaName: null,
     areaColor: 'blue',
     habitTitle: null,
@@ -67,6 +68,7 @@ function makeActivity(overrides: Partial<ActivityForCalendar>): ActivityForCalen
     calendarId: null,
     calendarColor: null,
     calendarName: null,
+    recurrenceGroupId: null,
     ...overrides,
   }
 }

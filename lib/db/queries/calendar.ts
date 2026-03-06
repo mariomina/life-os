@@ -20,6 +20,7 @@ export interface ActivityForCalendar {
   scheduledDurationMinutes: number | null
   status: string
   planned: boolean
+  areaId: string | null
   areaName: string | null
   areaColor: TEventColor
   habitTitle: string | null
@@ -27,6 +28,7 @@ export interface ActivityForCalendar {
   calendarId: string | null
   calendarColor: string | null // hex — tiene precedencia sobre areaColor en la UI
   calendarName: string | null
+  recurrenceGroupId: string | null
 }
 
 // ─── Color mapping ────────────────────────────────────────────────────────────
@@ -112,6 +114,7 @@ export async function getActivitiesForDay(
     scheduledDurationMinutes: row.activity.scheduledDurationMinutes,
     status: row.activity.status,
     planned: row.activity.planned,
+    areaId: row.activity.areaId ?? null,
     areaName: row.areaName ?? null,
     areaColor: maslowLevelToColor(row.areaLevel ?? null),
     habitTitle: row.habitTitle ?? null,
@@ -119,6 +122,7 @@ export async function getActivitiesForDay(
     calendarId: row.calendarId ?? null,
     calendarColor: row.calendarColor ?? null,
     calendarName: row.calendarName ?? null,
+    recurrenceGroupId: row.activity.recurrenceGroupId ?? null,
   }))
 }
 
@@ -195,6 +199,7 @@ export async function getActivitiesForWeek(
     scheduledDurationMinutes: row.activity.scheduledDurationMinutes,
     status: row.activity.status,
     planned: row.activity.planned,
+    areaId: row.activity.areaId ?? null,
     areaName: row.areaName ?? null,
     areaColor: maslowLevelToColor(row.areaLevel ?? null),
     habitTitle: row.habitTitle ?? null,
@@ -202,6 +207,7 @@ export async function getActivitiesForWeek(
     calendarId: row.calendarId ?? null,
     calendarColor: row.calendarColor ?? null,
     calendarName: row.calendarName ?? null,
+    recurrenceGroupId: row.activity.recurrenceGroupId ?? null,
   }))
 }
 
@@ -264,6 +270,7 @@ export async function getActivitiesForMonth(
     scheduledDurationMinutes: row.activity.scheduledDurationMinutes,
     status: row.activity.status,
     planned: row.activity.planned,
+    areaId: row.activity.areaId ?? null,
     areaName: row.areaName ?? null,
     areaColor: maslowLevelToColor(row.areaLevel ?? null),
     habitTitle: row.habitTitle ?? null,
@@ -271,6 +278,7 @@ export async function getActivitiesForMonth(
     calendarId: row.calendarId ?? null,
     calendarColor: row.calendarColor ?? null,
     calendarName: row.calendarName ?? null,
+    recurrenceGroupId: row.activity.recurrenceGroupId ?? null,
   }))
 }
 
@@ -328,6 +336,7 @@ export async function getActivitiesForRange(
     scheduledDurationMinutes: row.activity.scheduledDurationMinutes,
     status: row.activity.status,
     planned: row.activity.planned,
+    areaId: row.activity.areaId ?? null,
     areaName: row.areaName ?? null,
     areaColor: maslowLevelToColor(row.areaLevel ?? null),
     habitTitle: row.habitTitle ?? null,
@@ -335,6 +344,7 @@ export async function getActivitiesForRange(
     calendarId: row.calendarId ?? null,
     calendarColor: row.calendarColor ?? null,
     calendarName: row.calendarName ?? null,
+    recurrenceGroupId: row.activity.recurrenceGroupId ?? null,
   }))
 }
 
@@ -486,6 +496,7 @@ export async function getActivitiesForYear(
     scheduledDurationMinutes: row.activity.scheduledDurationMinutes,
     status: row.activity.status,
     planned: row.activity.planned,
+    areaId: row.activity.areaId ?? null,
     areaName: row.areaName ?? null,
     areaColor: maslowLevelToColor(row.areaLevel ?? null),
     habitTitle: row.habitTitle ?? null,
@@ -493,5 +504,6 @@ export async function getActivitiesForYear(
     calendarId: row.calendarId ?? null,
     calendarColor: row.calendarColor ?? null,
     calendarName: row.calendarName ?? null,
+    recurrenceGroupId: row.activity.recurrenceGroupId ?? null,
   }))
 }

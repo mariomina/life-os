@@ -59,7 +59,7 @@ const MAX_OCCURRENCES: Record<RecurrenceType, number> = {
   weekly: 52,
   weekdays: 260, // ~1 año de días hábiles
   monthly: 12,
-  yearly: 10,
+  yearly: 30,
   custom: 260,
 }
 
@@ -178,7 +178,10 @@ export function generateOccurrences(start: Date, options: RecurrenceOptions): Da
   if (options.type === 'none') return [new Date(start)]
 
   const maxOcc = MAX_OCCURRENCES[options.type]
-  const limit = options.endType === 'never' ? maxOcc : Math.min(Math.max(1, options.count), maxOcc)
+  const limit =
+    options.endType === 'never' || options.endType === 'date'
+      ? maxOcc
+      : Math.min(Math.max(1, options.count), maxOcc)
 
   const endDate =
     options.endType === 'date' && options.endDate ? new Date(options.endDate + 'T23:59:59') : null
@@ -269,7 +272,15 @@ export function describeRecurrence(options: RecurrenceOptions, start: Date): str
   }
 
   if (options.endType === 'never') {
-    return `Se crearán hasta ${count} ${eventWord} (${label})`
+    const unitLabel =
+      options.type === 'yearly'
+        ? `próximos ${count} años`
+        : options.type === 'monthly'
+          ? `próximos ${count} meses`
+          : options.type === 'weekly' || options.type === 'weekdays'
+            ? `próximas ${count} semanas`
+            : `próximos ${count} días`
+    return `Se crearán ${count} ${eventWord} (${label}, ${unitLabel})`
   }
 
   return `Se crearán ${count} ${eventWord} (${label})`

@@ -14,6 +14,7 @@ import { revalidatePath } from 'next/cache'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { db, assertDatabaseUrl } from '@/lib/db/client'
 import { stepsActivities } from '@/lib/db/schema/steps-activities'
+import { timeEntries } from '@/lib/db/schema/time-entries'
 import { areas } from '@/lib/db/schema/areas'
 import { getHolidaysForUser } from '@/lib/db/queries/holidays'
 import {
@@ -65,6 +66,7 @@ export async function createActivity(formData: FormData): Promise<ActionResult> 
   const areaId = (formData.get('areaId') as string | null) ?? ''
   const calendarId = (formData.get('calendarId') as string | null) || null
   const description = (formData.get('description') as string | null)?.trim() || null
+  const actualTimeMinutes = Number(formData.get('actualTimeMinutes') ?? 0)
 
   // Recurrence fields
   const recurrenceType = ((formData.get('recurrenceType') as string | null) ??
@@ -111,8 +113,23 @@ export async function createActivity(formData: FormData): Promise<ActionResult> 
     }
 
     if (recurrenceType === 'none') {
-      // Actividad simple — comportamiento original
-      await db.insert(stepsActivities).values({ ...baseFields, scheduledAt })
+      // Actividad simple — generamos el ID antes para evitar .returning()
+      const newActivityId = crypto.randomUUID()
+      await db.insert(stepsActivities).values({ ...baseFields, id: newActivityId, scheduledAt })
+
+      // Registrar tiempo real gastado como time_entry completado
+      if (actualTimeMinutes > 0) {
+        const durationSeconds = actualTimeMinutes * 60
+        const endedAt = new Date(scheduledAt.getTime() + durationSeconds * 1000)
+        await db.insert(timeEntries).values({
+          stepActivityId: newActivityId,
+          userId,
+          startedAt: scheduledAt,
+          endedAt,
+          durationSeconds,
+          isActive: false,
+        })
+      }
     } else {
       // Actividad recurrente — genera todas las ocurrencias
       const recurrenceOptions: RecurrenceOptions = {
@@ -176,6 +193,250 @@ export async function deleteActivity(activityId: string): Promise<ActionResult> 
   } catch (err) {
     console.error('[deleteActivity] failed:', err)
     return { error: 'No se pudo eliminar la actividad.' }
+  }
+}
+
+// ─── Edit / Delete (Story 10.9) ───────────────────────────────────────────────
+
+/**
+ * Updates a single activity.
+ * Validates ownership and UUID format. Updates date/time only for this occurrence.
+ */
+export async function updateActivity(
+  activityId: string,
+  data: {
+    title: string
+    description: string | null
+    date: string
+    time: string
+    duration: number
+    areaId: string | null
+    calendarId: string | null
+    actualTimeMinutes?: number
+  }
+): Promise<ActionResult> {
+  if (!UUID_REGEX.test(activityId)) return { error: 'ID de actividad inválido' }
+
+  const trimmedTitle = data.title?.trim() ?? ''
+  if (!trimmedTitle) return { error: 'El título es requerido' }
+  if (trimmedTitle.length > 100) return { error: 'El título no puede superar 100 caracteres' }
+
+  const scheduledAt = new Date(`${data.date}T${data.time}:00`)
+  if (isNaN(scheduledAt.getTime())) return { error: 'Fecha u hora inválida' }
+
+  const durationMinutes = isNaN(data.duration) || data.duration <= 0 ? 30 : data.duration
+
+  try {
+    assertDatabaseUrl()
+    const userId = await getAuthenticatedUserId()
+
+    await db
+      .update(stepsActivities)
+      .set({
+        title: trimmedTitle,
+        description: data.description,
+        scheduledAt,
+        scheduledDurationMinutes: durationMinutes,
+        areaId: data.areaId && UUID_REGEX.test(data.areaId) ? data.areaId : null,
+        calendarId: data.calendarId ?? null,
+        updatedAt: new Date(),
+      })
+      .where(and(eq(stepsActivities.id, activityId), eq(stepsActivities.userId, userId)))
+
+    // Registrar tiempo real adicional como time_entry completado
+    if (data.actualTimeMinutes && data.actualTimeMinutes > 0) {
+      const durationSeconds = data.actualTimeMinutes * 60
+      const endedAt = new Date(scheduledAt.getTime() + durationSeconds * 1000)
+      await db.insert(timeEntries).values({
+        stepActivityId: activityId,
+        userId,
+        startedAt: scheduledAt,
+        endedAt,
+        durationSeconds,
+        isActive: false,
+      })
+    }
+
+    revalidatePath('/calendar')
+    return { error: null }
+  } catch (err) {
+    console.error('[updateActivity] failed:', err)
+    return { error: 'No se pudo actualizar la actividad.' }
+  }
+}
+
+/**
+ * Updates all activities sharing a recurrenceGroupId.
+ * Common fields only (title, description, area, calendar, duration) — not scheduledAt.
+ */
+export async function updateActivityGroup(
+  recurrenceGroupId: string,
+  data: {
+    title: string
+    description: string | null
+    duration: number
+    areaId: string | null
+    calendarId: string | null
+  }
+): Promise<ActionResult> {
+  if (!UUID_REGEX.test(recurrenceGroupId)) return { error: 'ID de grupo inválido' }
+
+  const trimmedTitle = data.title?.trim() ?? ''
+  if (!trimmedTitle) return { error: 'El título es requerido' }
+
+  const durationMinutes = isNaN(data.duration) || data.duration <= 0 ? 30 : data.duration
+
+  try {
+    assertDatabaseUrl()
+    const userId = await getAuthenticatedUserId()
+
+    await db
+      .update(stepsActivities)
+      .set({
+        title: trimmedTitle,
+        description: data.description,
+        scheduledDurationMinutes: durationMinutes,
+        areaId: data.areaId && UUID_REGEX.test(data.areaId) ? data.areaId : null,
+        calendarId: data.calendarId ?? null,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(stepsActivities.recurrenceGroupId, recurrenceGroupId),
+          eq(stepsActivities.userId, userId)
+        )
+      )
+
+    revalidatePath('/calendar')
+    return { error: null }
+  } catch (err) {
+    console.error('[updateActivityGroup] failed:', err)
+    return { error: 'No se pudo actualizar el grupo de actividades.' }
+  }
+}
+
+/**
+ * Deletes all activities sharing a recurrenceGroupId.
+ */
+export async function deleteActivityGroup(recurrenceGroupId: string): Promise<ActionResult> {
+  if (!UUID_REGEX.test(recurrenceGroupId)) return { error: 'ID de grupo inválido' }
+
+  try {
+    assertDatabaseUrl()
+    const userId = await getAuthenticatedUserId()
+
+    await db
+      .delete(stepsActivities)
+      .where(
+        and(
+          eq(stepsActivities.recurrenceGroupId, recurrenceGroupId),
+          eq(stepsActivities.userId, userId)
+        )
+      )
+
+    revalidatePath('/calendar')
+    return { error: null }
+  } catch (err) {
+    console.error('[deleteActivityGroup] failed:', err)
+    return { error: 'No se pudo eliminar el grupo de actividades.' }
+  }
+}
+
+// ─── Sync Clases Régimen Sierra Ecuador (Story 10.12) ────────────────────────
+
+/**
+ * Datos del año lectivo Régimen Sierra Ecuador 2025-2026 (Ministerio de Educación).
+ * No existe API pública — datos hardcodeados del cronograma oficial.
+ * Referencia: https://educacion.gob.ec
+ */
+const SIERRA_PERIODS_2025_2026 = [
+  { start: '2025-09-01', end: '2025-12-05' }, // Primer período
+  { start: '2025-12-08', end: '2026-03-20' }, // Segundo período
+  { start: '2026-03-23', end: '2026-06-26' }, // Tercer período
+]
+
+/**
+ * Genera actividades de "Clases" para cada día hábil (lun-vie) dentro de los
+ * tres períodos del año lectivo Régimen Sierra 2025-2026, excluyendo festivos.
+ * Idempotente: si ya hay actividades en ese calendario con el mismo groupId, no duplica.
+ *
+ * @param calendarId - ID del calendario "Clases Régimen Sierra"
+ */
+export async function syncSierraSchoolCalendar(
+  calendarId: string
+): Promise<{ synced: number; error: string | null }> {
+  if (!UUID_REGEX.test(calendarId)) return { synced: 0, error: 'ID de calendario inválido' }
+
+  try {
+    assertDatabaseUrl()
+    const userId = await getAuthenticatedUserId()
+    const { getHolidaysForUser } = await import('@/lib/db/queries/holidays')
+    const userHolidays = await getHolidaysForUser(userId)
+    const holidayDates = new Set(userHolidays.map((h) => h.date))
+
+    // Verificar si ya existe una sincronización anterior (recurrenceGroupId empezando con 'sierra-')
+    // Usamos un UUID determinista basado en calendarId para idempotencia
+    const groupTag = `sierra-2025-2026-${calendarId}`
+    const existing = await db
+      .select({ id: stepsActivities.id })
+      .from(stepsActivities)
+      .where(
+        and(
+          eq(stepsActivities.userId, userId),
+          eq(stepsActivities.calendarId, calendarId),
+          eq(stepsActivities.title, 'Clases')
+        )
+      )
+      .limit(1)
+
+    if (existing.length > 0) {
+      return { synced: 0, error: null } // ya sincronizado
+    }
+
+    const recurrenceGroupId = crypto.randomUUID()
+    const classDates: Date[] = []
+
+    for (const period of SIERRA_PERIODS_2025_2026) {
+      const start = new Date(`${period.start}T07:00:00`)
+      const end = new Date(`${period.end}T07:00:00`)
+      const current = new Date(start)
+      while (current <= end) {
+        const dow = current.getDay()
+        const dateStr = format(current, 'yyyy-MM-dd')
+        if (dow !== 0 && dow !== 6 && !holidayDates.has(dateStr)) {
+          classDates.push(new Date(current))
+        }
+        current.setDate(current.getDate() + 1)
+      }
+    }
+
+    if (classDates.length === 0) return { synced: 0, error: null }
+
+    // Insert in chunks of 100 to avoid hitting DB limits
+    const CHUNK = 100
+    for (let i = 0; i < classDates.length; i += CHUNK) {
+      const chunk = classDates.slice(i, i + CHUNK)
+      await db.insert(stepsActivities).values(
+        chunk.map((d) => ({
+          userId,
+          title: 'Clases',
+          description: 'Día de clases — Régimen Sierra Ecuador',
+          scheduledAt: d,
+          scheduledDurationMinutes: 480, // 8 horas
+          calendarId,
+          recurrenceGroupId,
+          status: 'pending' as const,
+          planned: false,
+          executorType: 'human' as const,
+        }))
+      )
+    }
+
+    revalidatePath('/calendar')
+    return { synced: classDates.length, error: null }
+  } catch (err) {
+    console.error('[syncSierraSchoolCalendar] failed:', err)
+    return { synced: 0, error: 'No se pudo sincronizar el calendario escolar.' }
   }
 }
 

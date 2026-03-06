@@ -32,9 +32,12 @@ export interface ICalendarEvent {
   color?: TEventColor
   description?: string
   planned?: boolean
+  areaId?: string
   calendarId?: string
   calendarColor?: string // hex — tiene precedencia sobre color de área en la UI
   calendarName?: string
+  recurrenceGroupId?: string
+  isAllDay?: boolean
 }
 
 export interface IDateRange {
@@ -51,9 +54,11 @@ interface ActivityLike {
   scheduledAt: Date | null
   scheduledDurationMinutes: number | null
   planned?: boolean
+  areaId?: string | null
   calendarId?: string | null
   calendarColor?: string | null
   calendarName?: string | null
+  recurrenceGroupId?: string | null
 }
 
 // ─── Event conversion ─────────────────────────────────────────────────────────
@@ -69,8 +74,10 @@ export function toCalendarEvent(
   if (!activity.scheduledAt) return null
 
   const start = new Date(activity.scheduledAt)
-  const durationMs = (activity.scheduledDurationMinutes ?? 30) * 60 * 1000
+  const durationMinutes = activity.scheduledDurationMinutes ?? 30
+  const durationMs = durationMinutes * 60 * 1000
   const end = new Date(start.getTime() + durationMs)
+  const isAllDay = durationMinutes >= 1440
 
   return {
     id: activity.id,
@@ -80,9 +87,12 @@ export function toCalendarEvent(
     color,
     ...(activity.description != null && { description: activity.description }),
     ...(activity.planned != null && { planned: activity.planned }),
+    ...(activity.areaId != null && { areaId: activity.areaId }),
     ...(activity.calendarId != null && { calendarId: activity.calendarId }),
     ...(activity.calendarColor != null && { calendarColor: activity.calendarColor }),
     ...(activity.calendarName != null && { calendarName: activity.calendarName }),
+    ...(activity.recurrenceGroupId != null && { recurrenceGroupId: activity.recurrenceGroupId }),
+    ...(isAllDay && { isAllDay: true }),
   }
 }
 
@@ -194,7 +204,12 @@ export function getDayHourSlots(date: Date, fromHour = 0, toHour = 24): Date[] {
  * Filters events that fall within a given day.
  */
 export function getEventsForDay(events: ICalendarEvent[], day: Date): ICalendarEvent[] {
-  return events.filter((e) => isSameDay(e.start, day) || isSameDay(e.end, day))
+  return events.filter((e) => {
+    if (isSameDay(e.start, day)) return true
+    // For all-day events, end = start+24h lands at 00:00 of the next day — don't count it
+    if (e.isAllDay) return false
+    return isSameDay(e.end, day)
+  })
 }
 
 /**

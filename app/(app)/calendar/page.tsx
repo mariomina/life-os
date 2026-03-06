@@ -53,6 +53,7 @@ export default async function CalendarPage() {
       .map((a) => {
         const start = new Date(a.scheduledAt)
         const durationMs = (a.scheduledDurationMinutes ?? 30) * 60 * 1000
+        const durationMinutes = a.scheduledDurationMinutes ?? 30
         return {
           id: a.id,
           title: a.title,
@@ -61,10 +62,13 @@ export default async function CalendarPage() {
           color: a.areaColor,
           description: a.description ?? undefined,
           planned: a.planned,
+          areaId: a.areaId ?? undefined,
           // Story 10.2: calendarColor tiene precedencia sobre areaColor en la UI
           calendarId: a.calendarId ?? undefined,
           calendarColor: a.calendarColor ?? undefined,
           calendarName: a.calendarName ?? undefined,
+          recurrenceGroupId: a.recurrenceGroupId ?? undefined,
+          ...(durationMinutes >= 1440 && { isAllDay: true }),
         }
       })
   } else {

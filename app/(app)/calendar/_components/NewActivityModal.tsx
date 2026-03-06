@@ -9,9 +9,10 @@
 
 import { useRef, useEffect, useState, useTransition } from 'react'
 import { format } from 'date-fns'
-import { X, RefreshCw } from 'lucide-react'
+import { X, RefreshCw, Plus, Check } from 'lucide-react'
 import { createActivity } from '@/actions/calendar'
 import type { Calendar } from '@/lib/db/queries/calendars'
+import { ColorPicker, CALENDAR_COLORS } from './CalendarSidebar'
 import {
   RECURRENCE_LABELS,
   RECURRENCE_DEFAULTS,
@@ -85,8 +86,27 @@ export function NewActivityModal({ onClose, defaultDate, calendars = [] }: NewAc
   const [recurrenceCount, setRecurrenceCount] = useState(RECURRENCE_DEFAULTS.weekly)
   const [recurrenceEndDate, setRecurrenceEndDate] = useState(() => defaultEndDate(defaultDate))
 
+  // All-day state
+  const [isAllDay, setIsAllDay] = useState(false)
+
   // Description state
   const [description, setDescription] = useState('')
+
+  // Actual time spent state (retroactive logging)
+  const [logActualTime, setLogActualTime] = useState(false)
+  const [actualHours, setActualHours] = useState(0)
+  const [actualMins, setActualMins] = useState(30)
+
+  // Local calendars + inline create state
+  const [localCalendars, setLocalCalendars] = useState<Calendar[]>(calendars)
+  const [selectedCalId, setSelectedCalId] = useState<string>(
+    calendars.find((c) => c.isDefault)?.id ?? ''
+  )
+  const [showNewCal, setShowNewCal] = useState(false)
+  const [newCalName, setNewCalName] = useState('')
+  const [newCalColor, setNewCalColor] = useState<string>(CALENDAR_COLORS[0])
+  const [newCalError, setNewCalError] = useState<string | null>(null)
+  const [isCreatingCal, setIsCreatingCal] = useState(false)
 
   // Custom recurrence state (Story 10.7)
   const [customInterval, setCustomInterval] = useState(1)
@@ -142,8 +162,16 @@ export function NewActivityModal({ onClose, defaultDate, calendars = [] }: NewAc
   }, [onClose])
 
   function handleSubmit(formData: FormData) {
-    // Inject effective duration (preset or custom) into the form data
-    formData.set('duration', String(effectiveDuration))
+    // All-day: override time and duration
+    if (isAllDay) {
+      formData.set('time', '00:00')
+      formData.set('duration', '1440')
+    } else {
+      formData.set('duration', String(effectiveDuration))
+    }
+    // Inject actual time spent (retroactive logging)
+    const actualMinutes = logActualTime ? Math.max(0, actualHours * 60 + actualMins) : 0
+    formData.set('actualTimeMinutes', String(actualMinutes))
     // Inject recurrence fields
     formData.set('recurrenceType', recurrenceType)
     formData.set('recurrenceEndType', recurrenceEndType)
@@ -161,11 +189,15 @@ export function NewActivityModal({ onClose, defaultDate, calendars = [] }: NewAc
     }
     setError(null)
     startTransition(async () => {
-      const result = await createActivity(formData)
-      if (result.error) {
-        setError(result.error)
-      } else {
-        onClose()
+      try {
+        const result = await createActivity(formData)
+        if (result.error) {
+          setError(result.error)
+        } else {
+          onClose()
+        }
+      } catch {
+        setError('Error inesperado al crear la actividad')
       }
     })
   }
@@ -259,102 +291,243 @@ export function NewActivityModal({ onClose, defaultDate, calendars = [] }: NewAc
             />
           </div>
           <div className="space-y-1">
-            <label htmlFor="time" className="text-sm font-medium text-foreground">
-              Hora <span className="text-red-500">*</span>
-            </label>
-            <input
-              id="time"
-              name="time"
-              type="time"
-              required
-              defaultValue={defaultTime}
-              className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
-            />
+            <div className="flex items-center justify-between">
+              <label htmlFor="time" className="text-sm font-medium text-foreground">
+                Hora {!isAllDay && <span className="text-red-500">*</span>}
+              </label>
+              <label className="flex items-center gap-1.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={isAllDay}
+                  onChange={(e) => setIsAllDay(e.target.checked)}
+                  className="accent-primary"
+                />
+                <span className="text-xs text-muted-foreground">Todo el día</span>
+              </label>
+            </div>
+            {isAllDay ? (
+              <div className="w-full rounded-xl border border-border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
+                Todo el día
+              </div>
+            ) : (
+              <input
+                id="time"
+                name="time"
+                type="time"
+                required
+                defaultValue={defaultTime}
+                className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+              />
+            )}
           </div>
         </div>
 
-        {/* Duration (Story 10.6 — con opción personalizada) */}
-        <div className="space-y-1">
-          <label htmlFor="durationSelect" className="text-sm font-medium text-foreground">
-            Duración
-          </label>
-          <select
-            id="durationSelect"
-            value={durationMode === 'custom' ? 0 : presetDuration}
-            onChange={(e) => {
-              const val = Number(e.target.value)
-              if (val === 0) {
-                setDurationMode('custom')
-              } else {
-                setDurationMode('preset')
-                setPresetDuration(val)
-              }
-            }}
-            className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
-          >
-            {DURATION_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
-
-          {/* Custom duration inputs — visible only when 'Personalizado' is selected */}
-          {durationMode === 'custom' && (
-            <div className="flex items-center gap-2 mt-2">
-              <div className="flex items-center gap-1">
-                <input
-                  type="number"
-                  min={0}
-                  max={23}
-                  value={customHours}
-                  onChange={(e) =>
-                    setCustomHours(Math.max(0, Math.min(23, Number(e.target.value))))
-                  }
-                  className="w-14 rounded-lg border border-border bg-background px-2 py-1 text-sm text-center focus:outline-none focus:ring-2 focus:ring-primary/50"
-                />
-                <span className="text-sm text-muted-foreground">h</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <select
-                  value={customMins}
-                  onChange={(e) => setCustomMins(Number(e.target.value))}
-                  className="w-16 rounded-lg border border-border bg-background px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
-                >
-                  {[0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55].map((m) => (
-                    <option key={m} value={m}>
-                      {String(m).padStart(2, '0')}
-                    </option>
-                  ))}
-                </select>
-                <span className="text-sm text-muted-foreground">min</span>
-              </div>
-              <span className="text-xs text-muted-foreground ml-1">= {effectiveDuration} min</span>
-            </div>
-          )}
-        </div>
-
-        {/* Calendar picker (Story 10.2 AC6) */}
-        {calendars.length > 0 && (
+        {/* Duration (Story 10.6 — oculto si es todo el día) */}
+        {!isAllDay && (
           <div className="space-y-1">
-            <label htmlFor="calendarId" className="text-sm font-medium text-foreground">
-              Calendario
+            <label htmlFor="durationSelect" className="text-sm font-medium text-foreground">
+              Duración
             </label>
             <select
-              id="calendarId"
-              name="calendarId"
-              defaultValue={calendars.find((c) => c.isDefault)?.id ?? ''}
+              id="durationSelect"
+              value={durationMode === 'custom' ? 0 : presetDuration}
+              onChange={(e) => {
+                const val = Number(e.target.value)
+                if (val === 0) {
+                  setDurationMode('custom')
+                } else {
+                  setDurationMode('preset')
+                  setPresetDuration(val)
+                }
+              }}
               className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
             >
-              <option value="">Sin calendario</option>
-              {calendars.map((cal) => (
-                <option key={cal.id} value={cal.id}>
-                  {cal.name}
+              {DURATION_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
                 </option>
               ))}
             </select>
+
+            {/* Custom duration inputs — visible only when 'Personalizado' is selected */}
+            {durationMode === 'custom' && (
+              <div className="flex items-center gap-2 mt-2">
+                <div className="flex items-center gap-1">
+                  <input
+                    type="number"
+                    min={0}
+                    max={23}
+                    value={customHours}
+                    onChange={(e) =>
+                      setCustomHours(Math.max(0, Math.min(23, Number(e.target.value))))
+                    }
+                    className="w-14 rounded-lg border border-border bg-background px-2 py-1 text-sm text-center focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  />
+                  <span className="text-sm text-muted-foreground">h</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <select
+                    value={customMins}
+                    onChange={(e) => setCustomMins(Number(e.target.value))}
+                    className="w-16 rounded-lg border border-border bg-background px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  >
+                    {[0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55].map((m) => (
+                      <option key={m} value={m}>
+                        {String(m).padStart(2, '0')}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="text-sm text-muted-foreground">min</span>
+                </div>
+                <span className="text-xs text-muted-foreground ml-1">
+                  = {effectiveDuration} min
+                </span>
+              </div>
+            )}
           </div>
         )}
+
+        {/* Tiempo real gastado — solo para actividades no recurrentes */}
+        {recurrenceType === 'none' && (
+          <div className="space-y-2">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={logActualTime}
+                onChange={(e) => setLogActualTime(e.target.checked)}
+                className="accent-primary"
+              />
+              <span className="text-sm font-medium text-foreground">
+                Registrar tiempo real gastado
+              </span>
+            </label>
+            {logActualTime && (
+              <div className="flex items-center gap-2 pl-6">
+                <div className="flex items-center gap-1">
+                  <input
+                    type="number"
+                    min={0}
+                    max={23}
+                    value={actualHours}
+                    onChange={(e) =>
+                      setActualHours(Math.max(0, Math.min(23, Number(e.target.value))))
+                    }
+                    className="w-14 rounded-lg border border-border bg-background px-2 py-1 text-sm text-center focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  />
+                  <span className="text-sm text-muted-foreground">h</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <select
+                    value={actualMins}
+                    onChange={(e) => setActualMins(Number(e.target.value))}
+                    className="w-16 rounded-lg border border-border bg-background px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  >
+                    {[0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55].map((m) => (
+                      <option key={m} value={m}>
+                        {String(m).padStart(2, '0')}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="text-sm text-muted-foreground">min</span>
+                </div>
+                <span className="text-xs text-muted-foreground ml-1">
+                  = {actualHours * 60 + actualMins} min
+                </span>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Calendar picker */}
+        <div className="space-y-1">
+          <div className="flex items-center justify-between">
+            <label htmlFor="calendarId" className="text-sm font-medium text-foreground">
+              Calendario
+            </label>
+            <button
+              type="button"
+              onClick={() => setShowNewCal((v) => !v)}
+              className="flex items-center gap-1 text-xs text-primary hover:text-primary/80 transition-colors"
+            >
+              <Plus className="h-3 w-3" /> Nuevo
+            </button>
+          </div>
+          <select
+            id="calendarId"
+            name="calendarId"
+            value={selectedCalId}
+            onChange={(e) => setSelectedCalId(e.target.value)}
+            className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+          >
+            <option value="">Sin calendario</option>
+            {localCalendars.map((cal) => (
+              <option key={cal.id} value={cal.id}>
+                {cal.name}
+              </option>
+            ))}
+          </select>
+          {showNewCal && (
+            <div className="space-y-2 rounded-lg border border-border bg-muted/30 p-2">
+              <input
+                type="text"
+                autoFocus
+                value={newCalName}
+                onChange={(e) => setNewCalName(e.target.value)}
+                placeholder="Nombre del calendario"
+                maxLength={60}
+                className="w-full rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/50"
+              />
+              <ColorPicker value={newCalColor} onChange={setNewCalColor} />
+              <div className="flex gap-1">
+                <button
+                  type="button"
+                  disabled={!newCalName.trim() || isCreatingCal}
+                  onClick={async () => {
+                    setNewCalError(null)
+                    setIsCreatingCal(true)
+                    try {
+                      const { createCalendar } = await import('@/actions/calendars')
+                      const result = await createCalendar({
+                        name: newCalName.trim(),
+                        color: newCalColor,
+                      })
+                      if (result.error) {
+                        setNewCalError(result.error)
+                      } else if (result.calendar) {
+                        setLocalCalendars((prev) => [...prev, result.calendar!])
+                        setSelectedCalId(result.calendar!.id)
+                        setShowNewCal(false)
+                        setNewCalName('')
+                        setNewCalError(null)
+                      }
+                    } catch {
+                      setNewCalError('Error al crear el calendario')
+                    } finally {
+                      setIsCreatingCal(false)
+                    }
+                  }}
+                  className="flex items-center gap-1 rounded-md bg-primary px-2 py-1 text-[10px] font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+                >
+                  <Check className="h-2.5 w-2.5" /> {isCreatingCal ? 'Creando...' : 'Crear'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowNewCal(false)
+                    setNewCalName('')
+                    setNewCalError(null)
+                  }}
+                  className="flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[10px] text-muted-foreground hover:text-foreground hover:bg-muted"
+                >
+                  <X className="h-2.5 w-2.5" /> Cancelar
+                </button>
+                {newCalError && (
+                  <p className="text-[10px] text-red-500 mt-1 w-full">{newCalError}</p>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
 
         {/* ── Recurrencia (Story 10.4 / 10.6 / 10.7) ──────────────────────── */}
         <div className="space-y-3 border-t border-border pt-4">

@@ -12,6 +12,7 @@ import {
   createCalendar as queryCreateCalendar,
   updateCalendar as queryUpdateCalendar,
   deleteCalendar as queryDeleteCalendar,
+  reorderCalendarsQuery,
   getTimeByCalendar,
 } from '@/lib/db/queries/calendars'
 import type { Calendar, CalendarTimeData } from '@/lib/db/queries/calendars'
@@ -205,6 +206,24 @@ export async function getDefaultCalendar(): Promise<Calendar | null> {
 }
 
 export { getCalendarById }
+
+/**
+ * Reorders the user's calendars based on the provided ordered array of IDs.
+ * Story 10.10: drag-to-reorder in CalendarSidebar.
+ */
+export async function reorderCalendars(orderedIds: string[]): Promise<{ error: string | null }> {
+  assertDatabaseUrl()
+  try {
+    if (!Array.isArray(orderedIds) || orderedIds.length === 0) return { error: null }
+    const userId = await getAuthenticatedUserId()
+    await reorderCalendarsQuery(userId, orderedIds)
+    revalidatePath('/calendar')
+    return { error: null }
+  } catch (err) {
+    console.error('[reorderCalendars] failed:', err)
+    return { error: 'No se pudo reordenar los calendarios.' }
+  }
+}
 
 // ─── Informe de tiempo por calendario ────────────────────────────────────────
 

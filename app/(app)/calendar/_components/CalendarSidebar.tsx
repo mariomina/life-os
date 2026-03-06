@@ -2,16 +2,16 @@
 
 // app/(app)/calendar/_components/CalendarSidebar.tsx
 // Panel lateral estilo Google Calendar para Calendarios Personalizados.
-// Story 10.2 (AC2, AC3, AC4).
+// Story 10.2 (AC2, AC3, AC4) + Story 10.10: checkbox coloreado, 20 colores, drag to reorder.
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { Eye, EyeOff, Pencil, Check, X, Plus, ArrowLeft } from 'lucide-react'
+import { Pencil, Check, X, Plus, ArrowLeft, GripVertical, RefreshCw, Trash2 } from 'lucide-react'
 import type { Calendar } from '@/lib/db/queries/calendars'
 
-// ─── Paleta de colores (estilo Google Calendar) ───────────────────────────────
+// ─── Paleta de colores extendida (20 colores Google/Material) ─────────────────
 
-const CALENDAR_COLORS = [
+export const CALENDAR_COLORS = [
   '#4285F4', // Azul Google
   '#34A853', // Verde Google
   '#EA4335', // Rojo Google
@@ -20,6 +20,18 @@ const CALENDAR_COLORS = [
   '#46BDC6', // Cian
   '#7986CB', // Índigo
   '#E91E63', // Rosa
+  '#9C27B0', // Morado
+  '#00BCD4', // Cian claro
+  '#009688', // Teal
+  '#8BC34A', // Verde lima
+  '#FF5722', // Naranja profundo
+  '#795548', // Marrón
+  '#607D8B', // Azul grisáceo
+  '#3F51B5', // Azul índigo
+  '#673AB7', // Morado profundo
+  '#F06292', // Rosa suave
+  '#26A69A', // Teal suave
+  '#F4511E', // Tomate
 ] as const
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -40,10 +52,30 @@ function loadHiddenCalendars(): Set<string> {
   return hidden
 }
 
-// ─── CalendarItem ─────────────────────────────────────────────────────────────
+// ─── ColorPicker ─────────────────────────────────────────────────────────────
+
+export function ColorPicker({ value, onChange }: { value: string; onChange: (c: string) => void }) {
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {CALENDAR_COLORS.map((c) => (
+        <button
+          key={c}
+          type="button"
+          title={c}
+          onClick={() => onChange(c)}
+          className="h-5 w-5 rounded-full transition-transform hover:scale-110"
+          style={{
+            backgroundColor: c,
+            outline: value === c ? `2px solid ${c}` : 'none',
+            outlineOffset: '2px',
+          }}
+        />
+      ))}
+    </div>
+  )
+}
 
 // ─── CalendarEditForm ─────────────────────────────────────────────────────────
-// Separate component so it mounts fresh (with current values) every time edit mode opens.
 
 function CalendarEditForm({
   calendar,
@@ -66,22 +98,7 @@ function CalendarEditForm({
         className="w-full rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary/50"
         maxLength={60}
       />
-      <div className="flex flex-wrap gap-1.5">
-        {CALENDAR_COLORS.map((c) => (
-          <button
-            key={c}
-            type="button"
-            title={c}
-            onClick={() => setColor(c)}
-            className="h-5 w-5 rounded-full transition-transform hover:scale-110"
-            style={{
-              backgroundColor: c,
-              outline: color === c ? `2px solid ${c}` : 'none',
-              outlineOffset: '2px',
-            }}
-          />
-        ))}
-      </div>
+      <ColorPicker value={color} onChange={setColor} />
       <div className="flex gap-1">
         <button
           type="button"
@@ -114,6 +131,11 @@ function CalendarItem({
   onStartEdit,
   onSaveEdit,
   onCancelEdit,
+  onDelete,
+  onDragStart,
+  onDragOver,
+  onDrop,
+  isDragOver,
 }: {
   calendar: Calendar
   isHidden: boolean
@@ -122,18 +144,50 @@ function CalendarItem({
   onStartEdit: (id: string) => void
   onSaveEdit: (id: string, name: string, color: string) => void
   onCancelEdit: () => void
+  onDelete: (id: string) => void
+  onDragStart: (id: string) => void
+  onDragOver: (e: React.DragEvent, id: string) => void
+  onDrop: (id: string) => void
+  isDragOver: boolean
 }) {
   if (isEditing) {
     return <CalendarEditForm calendar={calendar} onSave={onSaveEdit} onCancel={onCancelEdit} />
   }
 
   return (
-    <div className="group flex items-center gap-2 rounded-md px-1 py-1 hover:bg-muted/50 transition-colors">
-      {/* Color dot */}
-      <span
-        className="h-3 w-3 shrink-0 rounded-full transition-opacity"
-        style={{ backgroundColor: calendar.color, opacity: isHidden ? 0.35 : 1 }}
-      />
+    <div
+      draggable
+      onDragStart={() => onDragStart(calendar.id)}
+      onDragOver={(e) => onDragOver(e, calendar.id)}
+      onDrop={() => onDrop(calendar.id)}
+      className={`group flex items-center gap-1.5 rounded-md px-1 py-1 hover:bg-muted/50 transition-colors cursor-grab active:cursor-grabbing${isDragOver ? ' border-t-2 border-primary' : ''}`}
+    >
+      {/* Drag handle */}
+      <GripVertical className="h-3 w-3 shrink-0 text-muted-foreground/40 opacity-0 group-hover:opacity-100 transition-opacity" />
+
+      {/* Checkbox coloreado — click para toggle visibilidad */}
+      <button
+        type="button"
+        onClick={() => onToggleVisibility(calendar.id)}
+        aria-label={isHidden ? `Mostrar ${calendar.name}` : `Ocultar ${calendar.name}`}
+        className="shrink-0 h-3.5 w-3.5 rounded-sm border-2 flex items-center justify-center transition-all"
+        style={{
+          borderColor: calendar.color,
+          backgroundColor: isHidden ? 'transparent' : calendar.color,
+        }}
+      >
+        {!isHidden && (
+          <svg className="h-2 w-2 text-white" viewBox="0 0 12 12" fill="none">
+            <path
+              d="M2 6l3 3 5-5"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        )}
+      </button>
 
       {/* Name — click to edit */}
       <button
@@ -144,25 +198,85 @@ function CalendarItem({
         {calendar.name}
       </button>
 
-      {/* Actions */}
-      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+      {/* Edit — hover only */}
+      <button
+        type="button"
+        onClick={() => onStartEdit(calendar.id)}
+        aria-label={`Editar ${calendar.name}`}
+        className="p-0.5 rounded text-muted-foreground hover:text-foreground opacity-0 group-hover:opacity-100 transition-opacity"
+      >
+        <Pencil className="h-2.5 w-2.5" />
+      </button>
+
+      {/* Sync button — only for Clases Régimen Sierra */}
+      {calendar.name.toLowerCase().includes('régimen sierra') && (
+        <SyncSierraButton calendarId={calendar.id} />
+      )}
+
+      {/* Delete — hover only, no default calendars */}
+      {!calendar.isDefault && (
         <button
           type="button"
-          onClick={() => onStartEdit(calendar.id)}
-          aria-label={`Editar ${calendar.name}`}
-          className="p-0.5 rounded text-muted-foreground hover:text-foreground"
+          onClick={() => {
+            if (
+              window.confirm(
+                `¿Eliminar el calendario "${calendar.name}"? Esta acción no se puede deshacer.`
+              )
+            ) {
+              onDelete(calendar.id)
+            }
+          }}
+          aria-label={`Eliminar ${calendar.name}`}
+          className="p-0.5 rounded text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
         >
-          <Pencil className="h-2.5 w-2.5" />
+          <Trash2 className="h-2.5 w-2.5" />
         </button>
-        <button
-          type="button"
-          onClick={() => onToggleVisibility(calendar.id)}
-          aria-label={isHidden ? `Mostrar ${calendar.name}` : `Ocultar ${calendar.name}`}
-          className="p-0.5 rounded text-muted-foreground hover:text-foreground"
-        >
-          {isHidden ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
-        </button>
-      </div>
+      )}
+    </div>
+  )
+}
+
+// ─── SyncSierraButton ────────────────────────────────────────────────────────
+
+function SyncSierraButton({ calendarId }: { calendarId: string }) {
+  const [syncing, setSyncing] = useState(false)
+  const [msg, setMsg] = useState<string | null>(null)
+
+  async function handleSync() {
+    setSyncing(true)
+    setMsg(null)
+    try {
+      const { syncSierraSchoolCalendar } = await import('@/actions/calendar')
+      const result = await syncSierraSchoolCalendar(calendarId)
+      if (result.error) {
+        setMsg(`Error: ${result.error}`)
+      } else if (result.synced === 0) {
+        setMsg('Ya sincronizado')
+      } else {
+        setMsg(`${result.synced} clases añadidas`)
+      }
+    } finally {
+      setSyncing(false)
+      setTimeout(() => setMsg(null), 3000)
+    }
+  }
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={handleSync}
+        disabled={syncing}
+        title="Sincronizar clases Régimen Sierra 2025-2026"
+        className="p-0.5 rounded text-muted-foreground hover:text-primary opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-50"
+      >
+        <RefreshCw className={`h-2.5 w-2.5 ${syncing ? 'animate-spin' : ''}`} />
+      </button>
+      {msg && (
+        <div className="absolute right-0 top-5 z-50 bg-popover border border-border rounded px-2 py-1 text-[10px] text-foreground whitespace-nowrap shadow">
+          {msg}
+        </div>
+      )}
     </div>
   )
 }
@@ -189,22 +303,7 @@ function NewCalendarForm({
         className="w-full rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/50"
         maxLength={60}
       />
-      <div className="flex flex-wrap gap-1.5">
-        {CALENDAR_COLORS.map((c) => (
-          <button
-            key={c}
-            type="button"
-            title={c}
-            onClick={() => setColor(c)}
-            className="h-5 w-5 rounded-full transition-transform hover:scale-110"
-            style={{
-              backgroundColor: c,
-              outline: color === c ? `2px solid ${c}` : 'none',
-              outlineOffset: '2px',
-            }}
-          />
-        ))}
-      </div>
+      <ColorPicker value={color} onChange={setColor} />
       <div className="flex gap-1">
         <button
           type="button"
@@ -237,18 +336,14 @@ export interface CalendarSidebarProps {
 export function CalendarSidebar({ calendars, onVisibilityChange }: CalendarSidebarProps) {
   const router = useRouter()
 
-  // Visibility state — loaded from localStorage
   const [hiddenCalendars, setHiddenCalendars] = useState<Set<string>>(() => loadHiddenCalendars())
-
-  // Local list (updates optimistically after create/edit)
   const [localCalendars, setLocalCalendars] = useState<Calendar[]>(calendars)
-
-  // UI state
+  const draggingIdRef = useRef<string | null>(null)
+  const [dragOverId, setDragOverId] = useState<string | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [isCreating, setIsCreating] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
 
-  // Sync local calendars when prop changes
   useEffect(() => {
     setLocalCalendars(calendars)
   }, [calendars])
@@ -281,6 +376,24 @@ export function CalendarSidebar({ calendars, onVisibilityChange }: CalendarSideb
     }
   }
 
+  async function handleDelete(id: string) {
+    const { deleteCalendar } = await import('@/actions/calendars')
+    const result = await deleteCalendar(id)
+    if (result.error) {
+      alert(`No se pudo eliminar: ${result.error}`)
+      return
+    }
+    setLocalCalendars((prev) => prev.filter((c) => c.id !== id))
+    // Limpiar visibilidad guardada
+    localStorage.removeItem(`${STORAGE_PREFIX}${id}`)
+    setHiddenCalendars((prev) => {
+      const next = new Set(prev)
+      next.delete(id)
+      onVisibilityChange(next)
+      return next
+    })
+  }
+
   async function handleCreate(name: string, color: string) {
     if (isSaving) return
     setIsSaving(true)
@@ -296,9 +409,38 @@ export function CalendarSidebar({ calendars, onVisibilityChange }: CalendarSideb
     }
   }
 
+  // ── Drag to reorder ──────────────────────────────────────────────────────────
+
+  function handleDragStart(id: string) {
+    draggingIdRef.current = id
+  }
+
+  function handleDragOver(e: React.DragEvent, targetId: string) {
+    e.preventDefault()
+    setDragOverId(targetId)
+  }
+
+  async function handleDrop(targetId: string) {
+    const sourceId = draggingIdRef.current
+    draggingIdRef.current = null
+    setDragOverId(null)
+    if (!sourceId || sourceId === targetId) return
+
+    const next = [...localCalendars]
+    const fromIdx = next.findIndex((c) => c.id === sourceId)
+    const toIdx = next.findIndex((c) => c.id === targetId)
+    if (fromIdx < 0 || toIdx < 0) return
+
+    const [moved] = next.splice(fromIdx, 1)
+    next.splice(toIdx, 0, moved)
+    setLocalCalendars(next)
+
+    const { reorderCalendars } = await import('@/actions/calendars')
+    await reorderCalendars(next.map((c) => c.id))
+  }
+
   return (
     <aside className="w-56 shrink-0 flex flex-col h-full border-r border-border bg-background">
-      {/* Calendars list */}
       <div className="flex-1 overflow-y-auto p-3 space-y-4">
         <section>
           <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">
@@ -309,7 +451,13 @@ export function CalendarSidebar({ calendars, onVisibilityChange }: CalendarSideb
             <p className="text-xs text-muted-foreground py-2">Sin calendarios. Crea el primero.</p>
           )}
 
-          <div className="space-y-0.5">
+          <div
+            className="space-y-0.5"
+            onDragEnd={() => {
+              draggingIdRef.current = null
+              setDragOverId(null)
+            }}
+          >
             {localCalendars.map((cal) => (
               <CalendarItem
                 key={cal.id}
@@ -323,11 +471,15 @@ export function CalendarSidebar({ calendars, onVisibilityChange }: CalendarSideb
                 }}
                 onSaveEdit={handleSaveEdit}
                 onCancelEdit={() => setEditingId(null)}
+                onDelete={handleDelete}
+                onDragStart={handleDragStart}
+                onDragOver={handleDragOver}
+                onDrop={handleDrop}
+                isDragOver={dragOverId === cal.id}
               />
             ))}
           </div>
 
-          {/* New calendar form / button */}
           {isCreating ? (
             <NewCalendarForm onSave={handleCreate} onCancel={() => setIsCreating(false)} />
           ) : (
@@ -346,7 +498,6 @@ export function CalendarSidebar({ calendars, onVisibilityChange }: CalendarSideb
         </section>
       </div>
 
-      {/* Footer — Salir */}
       <div className="border-t border-border p-3">
         <button
           type="button"
