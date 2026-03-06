@@ -144,6 +144,7 @@ const AVAILABLE_WEEKLY_MINUTES = 24 * 60 * 7 // 24h × 7 days = 10080 min (weekl
 
 export function calcTimeBudget(events: ICalendarEvent[]) {
   const committed = events.reduce((acc, e) => {
+    if (e.isAllDay) return acc
     return acc + (e.end.getTime() - e.start.getTime()) / 60000
   }, 0)
   return {
@@ -155,6 +156,7 @@ export function calcTimeBudget(events: ICalendarEvent[]) {
 
 export function calcWeeklyTimeBudget(events: ICalendarEvent[]) {
   const committed = events.reduce((acc, e) => {
+    if (e.isAllDay) return acc
     return acc + (e.end.getTime() - e.start.getTime()) / 60000
   }, 0)
   return {
@@ -1067,46 +1069,52 @@ function YearView({
                 const dayKey = format(day, 'yyyy-MM-dd')
                 const isHoliday = !!holidayMap.get(dayKey)
                 const dayAllEvents = getEventsForDay(events, day)
-                // Solo contar actividades espontáneas (planned=false) para el heatmap
-                const spontaneousCount = dayAllEvents.filter((e) => e.planned === false).length
-                const hasBirthday = dayAllEvents.some((e) =>
-                  e.calendarName?.toLowerCase().includes('cumpleaños')
-                )
+                const allDayEvts = dayAllEvents.filter((e) => e.isAllDay)
+                const regularEvts = dayAllEvents.filter((e) => !e.isAllDay)
 
-                // Prioridad visual: today > holiday > birthday > heatmap espontáneo
-                const heatClass = isToday(day)
+                // Puntos de colores para eventos normales (máx 3, colores únicos por calendario)
+                const dotColors = [...new Set(regularEvts.map((e) => e.calendarColor ?? '#6366f1'))]
+
+                // Resaltado de fondo: solo hoy / festivo / todo-el-día
+                const bgClass = isToday(day)
                   ? 'bg-primary text-primary-foreground font-bold'
                   : !inMonth
                     ? 'text-muted-foreground/30'
                     : isHoliday
                       ? 'bg-orange-400/70 text-white dark:bg-orange-600/60 dark:text-white'
-                      : hasBirthday
+                      : allDayEvts.length > 0
                         ? 'bg-pink-400/70 text-white dark:bg-pink-600/60 dark:text-white'
-                        : spontaneousCount === 0
-                          ? 'text-foreground'
-                          : spontaneousCount <= 2
-                            ? 'bg-primary/30 text-foreground'
-                            : spontaneousCount <= 5
-                              ? 'bg-primary/60 text-foreground'
-                              : 'bg-primary text-primary-foreground'
+                        : 'text-foreground'
+
+                const tooltipTitle = isHoliday
+                  ? holidayMap.get(dayKey)
+                  : allDayEvts.length > 0
+                    ? allDayEvts.map((e) => e.title).join(', ')
+                    : inMonth
+                      ? `Ver día ${format(day, 'd MMM yyyy')}`
+                      : undefined
+
                 return (
                   <button
                     key={day.toISOString()}
                     type="button"
-                    title={
-                      isHoliday
-                        ? holidayMap.get(dayKey)
-                        : hasBirthday
-                          ? 'Cumpleaños'
-                          : inMonth
-                            ? `Ver día ${format(day, 'd MMM yyyy')}`
-                            : undefined
-                    }
+                    title={tooltipTitle}
                     onClick={() => inMonth && onDayClick?.(day)}
                     disabled={!inMonth}
-                    className={`text-center text-[10px] leading-5 rounded-full transition-transform ${inMonth ? 'cursor-pointer hover:scale-125 hover:ring-1 hover:ring-primary/50' : 'cursor-default'} ${heatClass}`}
+                    className={`flex flex-col items-center justify-start pt-px text-[10px] leading-4 rounded-sm transition-transform ${inMonth ? 'cursor-pointer hover:scale-110 hover:ring-1 hover:ring-primary/50' : 'cursor-default'} ${bgClass}`}
                   >
                     {inMonth ? format(day, 'd') : ''}
+                    {inMonth && dotColors.length > 0 && (
+                      <span className="flex gap-px mt-px">
+                        {dotColors.slice(0, 3).map((color) => (
+                          <span
+                            key={color}
+                            className="w-1 h-1 rounded-full"
+                            style={{ backgroundColor: color }}
+                          />
+                        ))}
+                      </span>
+                    )}
                   </button>
                 )
               })}
