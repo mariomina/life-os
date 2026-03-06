@@ -8,7 +8,7 @@
 // Story 10.6 — Recurrencia 'workdays': filtra festivos del usuario post-generación.
 // Story 10.7 — Tipo 'custom' con interval/unit/daysOfWeek/excludeHolidays.
 
-import { eq, and, asc } from 'drizzle-orm'
+import { eq, and, asc, gte } from 'drizzle-orm'
 import { format } from 'date-fns'
 import { revalidatePath } from 'next/cache'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
@@ -374,6 +374,95 @@ export async function updateGroupRecurrenceType(
   } catch (err) {
     console.error('[updateGroupRecurrenceType] failed:', err)
     return { error: 'No se pudo actualizar el tipo de recurrencia.' }
+  }
+}
+
+/**
+ * Changes the recurrence of a group from a given date onwards.
+ * Deletes all occurrences in the group scheduled on or after `fromDate`,
+ * then regenerates them with the new recurrenceOptions starting from `fromDate`.
+ * Past occurrences are preserved.
+ */
+export async function changeGroupRecurrence(
+  recurrenceGroupId: string,
+  fromDate: string, // 'YYYY-MM-DD' — first date of the new series
+  recurrenceOptions: RecurrenceOptions
+): Promise<ActionResult> {
+  if (!UUID_REGEX.test(recurrenceGroupId)) return { error: 'ID de grupo inválido' }
+
+  try {
+    assertDatabaseUrl()
+    const userId = await getAuthenticatedUserId()
+
+    // Get base fields from the first activity in the group
+    const [base] = await db
+      .select()
+      .from(stepsActivities)
+      .where(
+        and(
+          eq(stepsActivities.recurrenceGroupId, recurrenceGroupId),
+          eq(stepsActivities.userId, userId)
+        )
+      )
+      .orderBy(asc(stepsActivities.scheduledAt))
+      .limit(1)
+
+    if (!base) return { error: 'Grupo no encontrado' }
+
+    // Parse fromDate + keep original time
+    const originalTime = base.scheduledAt ? new Date(base.scheduledAt) : new Date()
+    const [y, m, d] = fromDate.split('-').map(Number)
+    const startDate = new Date(
+      Date.UTC(y, m - 1, d, originalTime.getUTCHours(), originalTime.getUTCMinutes(), 0, 0)
+    )
+
+    // Delete all occurrences on or after fromDate
+    const fromDateTs = new Date(Date.UTC(y, m - 1, d, 0, 0, 0, 0))
+    await db
+      .delete(stepsActivities)
+      .where(
+        and(
+          eq(stepsActivities.recurrenceGroupId, recurrenceGroupId),
+          eq(stepsActivities.userId, userId),
+          gte(stepsActivities.scheduledAt, fromDateTs)
+        )
+      )
+
+    // Generate new occurrences
+    let occurrences = generateOccurrences(startDate, recurrenceOptions)
+
+    // Filter holidays if requested
+    if (recurrenceOptions.excludeHolidays) {
+      const userHolidays = await getHolidaysForUser(userId)
+      const holidayDates = new Set(userHolidays.map((h) => h.date))
+      occurrences = occurrences.filter((d) => !holidayDates.has(format(d, 'yyyy-MM-dd')))
+    }
+
+    if (occurrences.length === 0) {
+      return { error: 'No se generaron ocurrencias con los parámetros indicados' }
+    }
+
+    await db.insert(stepsActivities).values(
+      occurrences.map((date) => ({
+        userId,
+        title: base.title,
+        description: base.description,
+        scheduledAt: date,
+        scheduledDurationMinutes: base.scheduledDurationMinutes,
+        calendarId: base.calendarId,
+        recurrenceGroupId,
+        recurrenceType: recurrenceOptions.type,
+        status: 'pending' as const,
+        planned: false,
+        executorType: 'human' as const,
+      }))
+    )
+
+    revalidatePath('/calendar')
+    return { error: null }
+  } catch (err) {
+    console.error('[changeGroupRecurrence] failed:', err)
+    return { error: 'No se pudo cambiar la recurrencia.' }
   }
 }
 

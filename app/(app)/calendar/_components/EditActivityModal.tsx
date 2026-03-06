@@ -9,8 +9,12 @@ import { format } from 'date-fns'
 import { X, Plus, Check } from 'lucide-react'
 import type { ICalendarEvent } from '@/lib/calendar/calendar-utils'
 import type { Calendar } from '@/lib/db/queries/calendars'
-import { RECURRENCE_LABELS } from '@/lib/calendar/recurrence-utils'
-import type { RecurrenceType } from '@/lib/calendar/recurrence-utils'
+import {
+  RECURRENCE_LABELS,
+  RECURRENCE_DEFAULTS,
+  describeRecurrence,
+} from '@/lib/calendar/recurrence-utils'
+import type { RecurrenceType, RecurrenceOptions } from '@/lib/calendar/recurrence-utils'
 import { ColorPicker, CALENDAR_COLORS } from './CalendarSidebar'
 
 // ─── Duration options ─────────────────────────────────────────────────────────
@@ -55,9 +59,34 @@ export function EditActivityModal({ event, onClose, calendars = [] }: EditActivi
   const [customHours, setCustomHours] = useState(Math.floor(durationMin / 60))
   const [customMins, setCustomMins] = useState(durationMin % 60)
   const [calendarId, setCalendarId] = useState(event.calendarId ?? '')
-  const [recurrenceType, setRecurrenceType] = useState<RecurrenceType>(
-    (event.recurrenceType as RecurrenceType) ?? 'none'
-  )
+
+  // ── Recurrence state (solo cuando isRecurring) ───────────────────────────────
+  const isRecurring = !!event.recurrenceGroupId
+  const initialRecType = (event.recurrenceType as RecurrenceType) ?? 'weekly'
+  const [recType, setRecType] = useState<RecurrenceType>(initialRecType)
+  const [recEndType, setRecEndType] = useState<'count' | 'date' | 'never'>('never')
+  const [recCount, setRecCount] = useState(RECURRENCE_DEFAULTS[initialRecType] ?? 8)
+  const [recEndDate, setRecEndDate] = useState('')
+  // "desde" — por defecto la fecha de este evento
+  const [recFromDate, setRecFromDate] = useState(format(event.start, 'yyyy-MM-dd'))
+
+  // computed preview
+  const recurrencePreview =
+    isRecurring && recType !== 'none'
+      ? (() => {
+          const opts: RecurrenceOptions = {
+            type: recType,
+            endType: recEndType,
+            count: recCount,
+            endDate: recEndDate,
+          }
+          try {
+            return describeRecurrence(opts, new Date(`${recFromDate}T${time}:00`))
+          } catch {
+            return ''
+          }
+        })()
+      : ''
 
   // Actual time spent state (retroactive logging)
   const [logActualTime, setLogActualTime] = useState(false)
@@ -77,7 +106,6 @@ export function EditActivityModal({ event, onClose, calendars = [] }: EditActivi
 
   // ── Recurring scope dialog state ────────────────────────────────────────────
   const [pendingAction, setPendingAction] = useState<'save' | 'delete' | null>(null)
-  const isRecurring = !!event.recurrenceGroupId
 
   // ── Lifecycle ───────────────────────────────────────────────────────────────
 
@@ -117,10 +145,12 @@ export function EditActivityModal({ event, onClose, calendars = [] }: EditActivi
     setPendingAction(null)
     setError(null)
     startTransition(async () => {
-      const { updateActivity, updateActivityGroup, updateGroupRecurrenceType } =
+      const { updateActivity, updateActivityGroup, changeGroupRecurrence } =
         await import('@/actions/calendar')
       let result
+
       if (scope === 'all' && event.recurrenceGroupId) {
+        // Primero actualizar campos comunes (título, descripción, duración, calendario)
         result = await updateActivityGroup(event.recurrenceGroupId, {
           title,
           description: description.trim() || null,
@@ -128,9 +158,15 @@ export function EditActivityModal({ event, onClose, calendars = [] }: EditActivi
           areaId: null,
           calendarId: calendarId || null,
         })
-        // Si el tipo de recurrencia cambió, actualizarlo también
-        if (!result.error && recurrenceType !== event.recurrenceType) {
-          await updateGroupRecurrenceType(event.recurrenceGroupId, recurrenceType)
+        // Si no hay error y la recurrencia cambió, regenerar fechas futuras
+        if (!result.error) {
+          const recOpts: RecurrenceOptions = {
+            type: recType,
+            endType: recEndType,
+            count: recCount,
+            endDate: recEndDate,
+          }
+          result = await changeGroupRecurrence(event.recurrenceGroupId, recFromDate, recOpts)
         }
       } else {
         const actualTimeMinutes = logActualTime ? Math.max(0, actualHours * 60 + actualMins) : 0
@@ -145,6 +181,7 @@ export function EditActivityModal({ event, onClose, calendars = [] }: EditActivi
           actualTimeMinutes: actualTimeMinutes > 0 ? actualTimeMinutes : undefined,
         })
       }
+
       if (result.error) {
         setError(result.error)
       } else {
@@ -207,7 +244,9 @@ export function EditActivityModal({ event, onClose, calendars = [] }: EditActivi
                     : 'bg-primary text-primary-foreground hover:bg-primary/90'
                 }`}
               >
-                Todos los eventos del grupo
+                {pendingAction === 'delete'
+                  ? 'Todos los eventos del grupo'
+                  : 'Todo el grupo (aplica nueva recurrencia)'}
               </button>
               <button
                 onClick={() => setPendingAction(null)}
@@ -269,31 +308,33 @@ export function EditActivityModal({ event, onClose, calendars = [] }: EditActivi
           />
         </div>
 
-        {/* Date + Time */}
-        <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-1">
-            <label className="text-sm font-medium text-foreground">
-              Fecha <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-              className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
-            />
+        {/* Date + Time — solo visible para ocurrencia individual */}
+        {!isRecurring && (
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <label className="text-sm font-medium text-foreground">
+                Fecha <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-sm font-medium text-foreground">
+                Hora <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="time"
+                value={time}
+                onChange={(e) => setTime(e.target.value)}
+                className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+              />
+            </div>
           </div>
-          <div className="space-y-1">
-            <label className="text-sm font-medium text-foreground">
-              Hora <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="time"
-              value={time}
-              onChange={(e) => setTime(e.target.value)}
-              className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
-            />
-          </div>
-        </div>
+        )}
 
         {/* Duration */}
         <div className="space-y-1">
@@ -403,27 +444,103 @@ export function EditActivityModal({ event, onClose, calendars = [] }: EditActivi
           </div>
         )}
 
-        {/* Recurrencia — solo para eventos recurrentes */}
+        {/* ── Recurrencia — solo para eventos recurrentes ── */}
         {isRecurring && (
-          <div className="space-y-1">
-            <label className="text-sm font-medium text-foreground">Recurrencia</label>
-            <select
-              value={recurrenceType}
-              onChange={(e) => setRecurrenceType(e.target.value as RecurrenceType)}
-              className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
-            >
-              {(['daily', 'weekly', 'weekdays', 'monthly', 'yearly'] as RecurrenceType[]).map(
-                (t) => (
-                  <option key={t} value={t}>
-                    {RECURRENCE_LABELS[t]}
-                  </option>
-                )
+          <div className="space-y-3 rounded-xl border border-border bg-muted/20 p-3">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+              Recurrencia
+            </p>
+
+            {/* Tipo */}
+            <div className="space-y-1">
+              <label className="text-sm font-medium text-foreground">Tipo</label>
+              <select
+                value={recType}
+                onChange={(e) => {
+                  const t = e.target.value as RecurrenceType
+                  setRecType(t)
+                  setRecCount(RECURRENCE_DEFAULTS[t] ?? 8)
+                }}
+                className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+              >
+                {(['daily', 'weekly', 'weekdays', 'monthly', 'yearly'] as RecurrenceType[]).map(
+                  (t) => (
+                    <option key={t} value={t}>
+                      {RECURRENCE_LABELS[t]}
+                    </option>
+                  )
+                )}
+              </select>
+            </div>
+
+            {/* Fecha desde */}
+            <div className="space-y-1">
+              <label className="text-sm font-medium text-foreground">Aplicar desde</label>
+              <input
+                type="date"
+                value={recFromDate}
+                onChange={(e) => setRecFromDate(e.target.value)}
+                className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+              />
+              <p className="text-xs text-muted-foreground">
+                Las ocurrencias anteriores a esta fecha se conservan.
+              </p>
+            </div>
+
+            {/* Condición de fin */}
+            <div className="space-y-1">
+              <label className="text-sm font-medium text-foreground">Termina</label>
+              <div className="flex gap-2">
+                {(
+                  [
+                    { v: 'count', label: 'Después de N' },
+                    { v: 'date', label: 'El día' },
+                    { v: 'never', label: 'Nunca' },
+                  ] as { v: 'count' | 'date' | 'never'; label: string }[]
+                ).map(({ v, label }) => (
+                  <button
+                    key={v}
+                    type="button"
+                    onClick={() => setRecEndType(v)}
+                    className={`flex-1 rounded-lg border px-2 py-1.5 text-xs font-medium transition-colors ${
+                      recEndType === v
+                        ? 'bg-primary text-primary-foreground border-primary'
+                        : 'border-border text-foreground hover:bg-muted'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              {recEndType === 'count' && (
+                <div className="flex items-center gap-2 mt-1">
+                  <input
+                    type="number"
+                    min={1}
+                    max={365}
+                    value={recCount}
+                    onChange={(e) => setRecCount(Math.max(1, Number(e.target.value)))}
+                    className="w-20 rounded-lg border border-border bg-background px-2 py-1 text-sm text-center focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  />
+                  <span className="text-sm text-muted-foreground">ocurrencias</span>
+                </div>
               )}
-            </select>
-            {recurrenceType !== event.recurrenceType && (
-              <p className="text-xs text-amber-500">
-                Este cambio solo actualiza la etiqueta del tipo — las fechas ya generadas no
-                cambian.
+
+              {recEndType === 'date' && (
+                <input
+                  type="date"
+                  value={recEndDate}
+                  onChange={(e) => setRecEndDate(e.target.value)}
+                  className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 mt-1"
+                />
+              )}
+            </div>
+
+            {/* Preview */}
+            {recurrencePreview && (
+              <p className="text-xs text-primary bg-primary/10 rounded-lg px-3 py-2">
+                {recurrencePreview}
               </p>
             )}
           </div>
