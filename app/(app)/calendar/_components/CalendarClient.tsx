@@ -1101,20 +1101,22 @@ function YearView({
                     title={tooltipTitle}
                     onClick={() => inMonth && onDayClick?.(day)}
                     disabled={!inMonth}
-                    className={`flex flex-col items-center justify-start pt-px text-[10px] leading-4 rounded-sm transition-transform ${inMonth ? 'cursor-pointer hover:scale-110 hover:ring-1 hover:ring-primary/50' : 'cursor-default'} ${bgClass}`}
+                    className={`flex flex-col items-center justify-center h-6 w-full text-[10px] leading-none rounded-sm transition-transform ${inMonth ? 'cursor-pointer hover:scale-110 hover:ring-1 hover:ring-primary/50' : 'cursor-default'} ${bgClass}`}
                   >
-                    {inMonth ? format(day, 'd') : ''}
-                    {inMonth && dotColors.length > 0 && (
-                      <span className="flex gap-px mt-px">
-                        {dotColors.slice(0, 3).map((color) => (
-                          <span
-                            key={color}
-                            className="w-1 h-1 rounded-full"
-                            style={{ backgroundColor: color }}
-                          />
-                        ))}
-                      </span>
-                    )}
+                    <span>{inMonth ? format(day, 'd') : ''}</span>
+                    {/* Fila de puntos — siempre renderizada (h-[5px]) para mantener altura constante */}
+                    <span className="flex gap-px h-[5px] items-center mt-px">
+                      {inMonth &&
+                        dotColors
+                          .slice(0, 3)
+                          .map((color) => (
+                            <span
+                              key={color}
+                              className="w-[3px] h-[3px] rounded-full"
+                              style={{ backgroundColor: color }}
+                            />
+                          ))}
+                    </span>
                   </button>
                 )
               })}
