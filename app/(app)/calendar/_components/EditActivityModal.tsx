@@ -9,7 +9,8 @@ import { format } from 'date-fns'
 import { X, Plus, Check } from 'lucide-react'
 import type { ICalendarEvent } from '@/lib/calendar/calendar-utils'
 import type { Calendar } from '@/lib/db/queries/calendars'
-import type { AreaOption } from '@/actions/calendar'
+import { RECURRENCE_LABELS } from '@/lib/calendar/recurrence-utils'
+import type { RecurrenceType } from '@/lib/calendar/recurrence-utils'
 import { ColorPicker, CALENDAR_COLORS } from './CalendarSidebar'
 
 // ─── Duration options ─────────────────────────────────────────────────────────
@@ -38,7 +39,6 @@ export function EditActivityModal({ event, onClose, calendars = [] }: EditActivi
   const dialogRef = useRef<HTMLDialogElement>(null)
   const [error, setError] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
-  const [areas, setAreas] = useState<AreaOption[]>([])
 
   // ── Form state ──────────────────────────────────────────────────────────────
   const durationMin = Math.round((event.end.getTime() - event.start.getTime()) / 60000)
@@ -54,8 +54,10 @@ export function EditActivityModal({ event, onClose, calendars = [] }: EditActivi
   const [presetDuration, setPresetDuration] = useState(knownPreset ? durationMin : 30)
   const [customHours, setCustomHours] = useState(Math.floor(durationMin / 60))
   const [customMins, setCustomMins] = useState(durationMin % 60)
-  const [areaId, setAreaId] = useState(event.areaId ?? '')
   const [calendarId, setCalendarId] = useState(event.calendarId ?? '')
+  const [recurrenceType, setRecurrenceType] = useState<RecurrenceType>(
+    (event.recurrenceType as RecurrenceType) ?? 'none'
+  )
 
   // Actual time spent state (retroactive logging)
   const [logActualTime, setLogActualTime] = useState(false)
@@ -78,15 +80,6 @@ export function EditActivityModal({ event, onClose, calendars = [] }: EditActivi
   const isRecurring = !!event.recurrenceGroupId
 
   // ── Lifecycle ───────────────────────────────────────────────────────────────
-
-  // Fetch areas from server
-  useEffect(() => {
-    import('@/actions/calendar').then(({ getAreasForUser }) => {
-      getAreasForUser()
-        .then(setAreas)
-        .catch(() => {})
-    })
-  }, [])
 
   useEffect(() => {
     const dialog = dialogRef.current
@@ -124,16 +117,21 @@ export function EditActivityModal({ event, onClose, calendars = [] }: EditActivi
     setPendingAction(null)
     setError(null)
     startTransition(async () => {
-      const { updateActivity, updateActivityGroup } = await import('@/actions/calendar')
+      const { updateActivity, updateActivityGroup, updateGroupRecurrenceType } =
+        await import('@/actions/calendar')
       let result
       if (scope === 'all' && event.recurrenceGroupId) {
         result = await updateActivityGroup(event.recurrenceGroupId, {
           title,
           description: description.trim() || null,
           duration: effectiveDuration,
-          areaId: areaId || null,
+          areaId: null,
           calendarId: calendarId || null,
         })
+        // Si el tipo de recurrencia cambió, actualizarlo también
+        if (!result.error && recurrenceType !== event.recurrenceType) {
+          await updateGroupRecurrenceType(event.recurrenceGroupId, recurrenceType)
+        }
       } else {
         const actualTimeMinutes = logActualTime ? Math.max(0, actualHours * 60 + actualMins) : 0
         result = await updateActivity(event.id, {
@@ -142,7 +140,7 @@ export function EditActivityModal({ event, onClose, calendars = [] }: EditActivi
           date,
           time,
           duration: effectiveDuration,
-          areaId: areaId || null,
+          areaId: null,
           calendarId: calendarId || null,
           actualTimeMinutes: actualTimeMinutes > 0 ? actualTimeMinutes : undefined,
         })
@@ -405,22 +403,29 @@ export function EditActivityModal({ event, onClose, calendars = [] }: EditActivi
           </div>
         )}
 
-        {/* Area */}
-        {areas.length > 0 && (
+        {/* Recurrencia — solo para eventos recurrentes */}
+        {isRecurring && (
           <div className="space-y-1">
-            <label className="text-sm font-medium text-foreground">Área</label>
+            <label className="text-sm font-medium text-foreground">Recurrencia</label>
             <select
-              value={areaId}
-              onChange={(e) => setAreaId(e.target.value)}
+              value={recurrenceType}
+              onChange={(e) => setRecurrenceType(e.target.value as RecurrenceType)}
               className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
             >
-              <option value="">Sin área</option>
-              {areas.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.name}
-                </option>
-              ))}
+              {(['daily', 'weekly', 'weekdays', 'monthly', 'yearly'] as RecurrenceType[]).map(
+                (t) => (
+                  <option key={t} value={t}>
+                    {RECURRENCE_LABELS[t]}
+                  </option>
+                )
+              )}
             </select>
+            {recurrenceType !== event.recurrenceType && (
+              <p className="text-xs text-amber-500">
+                Este cambio solo actualiza la etiqueta del tipo — las fechas ya generadas no
+                cambian.
+              </p>
+            )}
           </div>
         )}
 

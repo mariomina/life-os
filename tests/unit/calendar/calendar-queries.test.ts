@@ -69,6 +69,7 @@ function makeActivity(overrides: Partial<ActivityForCalendar>): ActivityForCalen
     calendarColor: null,
     calendarName: null,
     recurrenceGroupId: null,
+    recurrenceType: null,
     ...overrides,
   }
 }

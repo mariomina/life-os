@@ -68,6 +68,7 @@ export default async function CalendarPage() {
           calendarColor: a.calendarColor ?? undefined,
           calendarName: a.calendarName ?? undefined,
           recurrenceGroupId: a.recurrenceGroupId ?? undefined,
+          recurrenceType: a.recurrenceType ?? undefined,
           ...(durationMinutes >= 1440 && { isAllDay: true }),
         }
       })

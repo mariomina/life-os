@@ -155,11 +155,14 @@ export async function createActivity(formData: FormData): Promise<ActionResult> 
         return { error: 'No se generaron ocurrencias con los parámetros indicados' }
       }
       const recurrenceGroupId = crypto.randomUUID()
-      await db
-        .insert(stepsActivities)
-        .values(
-          occurrences.map((date) => ({ ...baseFields, scheduledAt: date, recurrenceGroupId }))
-        )
+      await db.insert(stepsActivities).values(
+        occurrences.map((date) => ({
+          ...baseFields,
+          scheduledAt: date,
+          recurrenceGroupId,
+          recurrenceType,
+        }))
+      )
     }
 
     revalidatePath('/calendar')
@@ -339,6 +342,38 @@ export async function deleteActivityGroup(recurrenceGroupId: string): Promise<Ac
   } catch (err) {
     console.error('[deleteActivityGroup] failed:', err)
     return { error: 'No se pudo eliminar el grupo de actividades.' }
+  }
+}
+
+/**
+ * Changes the recurrenceType label for all activities in a group.
+ * Purely a metadata update — does not regenerate scheduledAt dates.
+ */
+export async function updateGroupRecurrenceType(
+  recurrenceGroupId: string,
+  recurrenceType: RecurrenceType
+): Promise<ActionResult> {
+  if (!UUID_REGEX.test(recurrenceGroupId)) return { error: 'ID de grupo inválido' }
+
+  try {
+    assertDatabaseUrl()
+    const userId = await getAuthenticatedUserId()
+
+    await db
+      .update(stepsActivities)
+      .set({ recurrenceType, updatedAt: new Date() })
+      .where(
+        and(
+          eq(stepsActivities.recurrenceGroupId, recurrenceGroupId),
+          eq(stepsActivities.userId, userId)
+        )
+      )
+
+    revalidatePath('/calendar')
+    return { error: null }
+  } catch (err) {
+    console.error('[updateGroupRecurrenceType] failed:', err)
+    return { error: 'No se pudo actualizar el tipo de recurrencia.' }
   }
 }
 

@@ -73,6 +73,12 @@ export const stepsActivities = pgTable(
      * null para actividades sin recurrencia.
      */
     recurrenceGroupId: uuid('recurrence_group_id'),
+    /**
+     * Tipo de recurrencia del grupo (Story 10.x).
+     * Valores: 'daily' | 'weekly' | 'weekdays' | 'monthly' | 'yearly' | 'custom'
+     * null para actividades sin recurrencia.
+     */
+    recurrenceType: text('recurrence_type'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },

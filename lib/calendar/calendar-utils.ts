@@ -37,6 +37,7 @@ export interface ICalendarEvent {
   calendarColor?: string // hex — tiene precedencia sobre color de área en la UI
   calendarName?: string
   recurrenceGroupId?: string
+  recurrenceType?: string | null
   isAllDay?: boolean
 }
 
@@ -59,6 +60,7 @@ interface ActivityLike {
   calendarColor?: string | null
   calendarName?: string | null
   recurrenceGroupId?: string | null
+  recurrenceType?: string | null
 }
 
 // ─── Event conversion ─────────────────────────────────────────────────────────
@@ -92,6 +94,7 @@ export function toCalendarEvent(
     ...(activity.calendarColor != null && { calendarColor: activity.calendarColor }),
     ...(activity.calendarName != null && { calendarName: activity.calendarName }),
     ...(activity.recurrenceGroupId != null && { recurrenceGroupId: activity.recurrenceGroupId }),
+    ...(activity.recurrenceType != null && { recurrenceType: activity.recurrenceType }),
     ...(isAllDay && { isAllDay: true }),
   }
 }

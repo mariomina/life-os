@@ -29,6 +29,7 @@ export interface ActivityForCalendar {
   calendarColor: string | null // hex — tiene precedencia sobre areaColor en la UI
   calendarName: string | null
   recurrenceGroupId: string | null
+  recurrenceType?: string | null
 }
 
 // ─── Color mapping ────────────────────────────────────────────────────────────
@@ -123,6 +124,7 @@ export async function getActivitiesForDay(
     calendarColor: row.calendarColor ?? null,
     calendarName: row.calendarName ?? null,
     recurrenceGroupId: row.activity.recurrenceGroupId ?? null,
+    recurrenceType: row.activity.recurrenceType ?? null,
   }))
 }
 
@@ -208,6 +210,7 @@ export async function getActivitiesForWeek(
     calendarColor: row.calendarColor ?? null,
     calendarName: row.calendarName ?? null,
     recurrenceGroupId: row.activity.recurrenceGroupId ?? null,
+    recurrenceType: row.activity.recurrenceType ?? null,
   }))
 }
 
@@ -279,6 +282,7 @@ export async function getActivitiesForMonth(
     calendarColor: row.calendarColor ?? null,
     calendarName: row.calendarName ?? null,
     recurrenceGroupId: row.activity.recurrenceGroupId ?? null,
+    recurrenceType: row.activity.recurrenceType ?? null,
   }))
 }
 
@@ -345,6 +349,7 @@ export async function getActivitiesForRange(
     calendarColor: row.calendarColor ?? null,
     calendarName: row.calendarName ?? null,
     recurrenceGroupId: row.activity.recurrenceGroupId ?? null,
+    recurrenceType: row.activity.recurrenceType ?? null,
   }))
 }
 
@@ -505,5 +510,6 @@ export async function getActivitiesForYear(
     calendarColor: row.calendarColor ?? null,
     calendarName: row.calendarName ?? null,
     recurrenceGroupId: row.activity.recurrenceGroupId ?? null,
+    recurrenceType: row.activity.recurrenceType ?? null,
   }))
 }

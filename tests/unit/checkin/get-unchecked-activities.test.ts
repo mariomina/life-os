@@ -65,6 +65,7 @@ function makeActivity(overrides: Partial<ActivityForCheckin>): ActivityForChecki
     habitTitle: null,
     calendarId: null,
     recurrenceGroupId: null,
+    recurrenceType: null,
     ...overrides,
   }
 }
