@@ -213,7 +213,7 @@ export function EditActivityModal({ event, onClose, calendars = [] }: EditActivi
   return (
     <dialog
       ref={dialogRef}
-      className="rounded-xl border border-border bg-card text-foreground shadow-xl backdrop:bg-black/40 p-0 w-full max-w-md"
+      className="m-auto rounded-xl border border-border bg-card text-foreground shadow-xl backdrop:bg-black/40 p-0 w-full max-w-md"
       onClick={(e) => {
         if (e.target === dialogRef.current) onClose()
       }}

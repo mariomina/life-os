@@ -1,15 +1,11 @@
 'use client'
 
 // app/(app)/calendar/_components/NewActivityModal.tsx
-// Modal dialog for creating a new spontaneous activity in the calendar.
-// Story 5.7  — CRUD Eventos desde el Calendario.
-// Story 10.4 — Click-to-create con hora pre-llenada + eventos recurrentes.
-// Story 10.6 — Duración personalizada + recurrencia días hábiles.
-// Story 10.7 — Recurrencia personalizada unificada (Google Calendar style).
+// Modal con dos tabs: "Planear" (actividad futura) y "Registrar" (actividad pasada).
 
 import { useRef, useEffect, useState, useTransition } from 'react'
 import { format } from 'date-fns'
-import { X, RefreshCw, Plus, Check } from 'lucide-react'
+import { X, CalendarDays, CheckCircle2, RefreshCw, Plus, Check } from 'lucide-react'
 import { createActivity } from '@/actions/calendar'
 import type { Calendar } from '@/lib/db/queries/calendars'
 import { ColorPicker, CALENDAR_COLORS } from './CalendarSidebar'
@@ -24,14 +20,17 @@ import {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+type ModalMode = 'plan' | 'log'
+
 interface NewActivityModalProps {
   onClose: () => void
   defaultDate: Date
-  /** Calendars for the selector (Story 10.2 AC6) */
   calendars?: Calendar[]
+  /** Fuerza la apertura en un modo específico */
+  initialMode?: ModalMode
 }
 
-// ─── Duration options ─────────────────────────────────────────────────────────
+// ─── Constants ────────────────────────────────────────────────────────────────
 
 const DURATION_OPTIONS = [
   { value: 15, label: '15 min' },
@@ -44,9 +43,7 @@ const DURATION_OPTIONS = [
 ]
 
 const RECURRENCE_OPTIONS = Object.entries(RECURRENCE_LABELS) as [RecurrenceType, string][]
-
 const DAY_LABELS = ['D', 'L', 'M', 'X', 'J', 'V', 'S']
-
 const UNIT_OPTIONS: { value: RecurrenceUnit; label: string }[] = [
   { value: 'day', label: 'día' },
   { value: 'week', label: 'semana' },
@@ -54,9 +51,6 @@ const UNIT_OPTIONS: { value: RecurrenceUnit; label: string }[] = [
   { value: 'year', label: 'año' },
 ]
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-/** Default ISO end date: 3 months from a given date */
 function defaultEndDate(from: Date): string {
   const d = new Date(from)
   d.setMonth(d.getMonth() + 3)
@@ -65,39 +59,21 @@ function defaultEndDate(from: Date): string {
 
 // ─── NewActivityModal ─────────────────────────────────────────────────────────
 
-export function NewActivityModal({ onClose, defaultDate, calendars = [] }: NewActivityModalProps) {
+export function NewActivityModal({
+  onClose,
+  defaultDate,
+  calendars = [],
+  initialMode = 'plan',
+}: NewActivityModalProps) {
   const dialogRef = useRef<HTMLDialogElement>(null)
   const [error, setError] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
 
-  // Duration state (Story 10.6)
-  const [durationMode, setDurationMode] = useState<'preset' | 'custom'>('preset')
-  const [presetDuration, setPresetDuration] = useState(30)
-  const [customHours, setCustomHours] = useState(0)
-  const [customMins, setCustomMins] = useState(30)
+  // ── Tab mode ────────────────────────────────────────────────────────────────
+  const [mode, setMode] = useState<ModalMode>(initialMode)
 
-  // Effective duration in minutes sent to the form
-  const effectiveDuration =
-    durationMode === 'custom' ? Math.max(1, customHours * 60 + customMins) : presetDuration
-
-  // Recurrence state
-  const [recurrenceType, setRecurrenceType] = useState<RecurrenceType>('none')
-  const [recurrenceEndType, setRecurrenceEndType] = useState<'count' | 'date' | 'never'>('count')
-  const [recurrenceCount, setRecurrenceCount] = useState(RECURRENCE_DEFAULTS.weekly)
-  const [recurrenceEndDate, setRecurrenceEndDate] = useState(() => defaultEndDate(defaultDate))
-
-  // All-day state
-  const [isAllDay, setIsAllDay] = useState(false)
-
-  // Description state
+  // ── Shared state ────────────────────────────────────────────────────────────
   const [description, setDescription] = useState('')
-
-  // Actual time spent state (retroactive logging)
-  const [logActualTime, setLogActualTime] = useState(false)
-  const [actualHours, setActualHours] = useState(0)
-  const [actualMins, setActualMins] = useState(30)
-
-  // Local calendars + inline create state
   const [localCalendars, setLocalCalendars] = useState<Calendar[]>(calendars)
   const [selectedCalId, setSelectedCalId] = useState<string>(
     calendars.find((c) => c.isDefault)?.id ?? ''
@@ -108,13 +84,29 @@ export function NewActivityModal({ onClose, defaultDate, calendars = [] }: NewAc
   const [newCalError, setNewCalError] = useState<string | null>(null)
   const [isCreatingCal, setIsCreatingCal] = useState(false)
 
-  // Custom recurrence state (Story 10.7)
+  // ── "Planear" state ─────────────────────────────────────────────────────────
+  const [durationMode, setDurationMode] = useState<'preset' | 'custom'>('preset')
+  const [presetDuration, setPresetDuration] = useState(30)
+  const [customHours, setCustomHours] = useState(0)
+  const [customMins, setCustomMins] = useState(30)
+  const [isAllDay, setIsAllDay] = useState(false)
+  const [recurrenceType, setRecurrenceType] = useState<RecurrenceType>('none')
+  const [recurrenceEndType, setRecurrenceEndType] = useState<'count' | 'date' | 'never'>('count')
+  const [recurrenceCount, setRecurrenceCount] = useState(RECURRENCE_DEFAULTS.weekly)
+  const [recurrenceEndDate, setRecurrenceEndDate] = useState(() => defaultEndDate(defaultDate))
   const [customInterval, setCustomInterval] = useState(1)
   const [customUnit, setCustomUnit] = useState<RecurrenceUnit>('week')
   const [customDays, setCustomDays] = useState<Set<number>>(new Set([1, 2, 3, 4, 5]))
   const [customExcludeHolidays, setCustomExcludeHolidays] = useState(false)
 
-  // Default time: use hour from the clicked slot if it was set, otherwise next round hour
+  // ── "Registrar" state ───────────────────────────────────────────────────────
+  const [logHours, setLogHours] = useState(0)
+  const [logMins, setLogMins] = useState(30)
+
+  // ── Derived ─────────────────────────────────────────────────────────────────
+  const effectiveDuration =
+    durationMode === 'custom' ? Math.max(1, customHours * 60 + customMins) : presetDuration
+
   const defaultTime = (() => {
     const h = defaultDate.getHours()
     if (h > 0) return `${String(h).padStart(2, '0')}:00`
@@ -124,85 +116,6 @@ export function NewActivityModal({ onClose, defaultDate, calendars = [] }: NewAc
     return format(now, 'HH:mm')
   })()
 
-  // Keep recurrence defaults in sync with type changes
-  const handleRecurrenceTypeChange = (type: RecurrenceType) => {
-    setRecurrenceType(type)
-    if (type === 'custom') {
-      setRecurrenceEndType('never')
-      setRecurrenceCount(RECURRENCE_DEFAULTS.custom)
-    } else {
-      setRecurrenceEndType('count')
-      setRecurrenceCount(RECURRENCE_DEFAULTS[type])
-    }
-  }
-
-  // Toggle a day in the custom days set
-  const toggleCustomDay = (day: number) => {
-    setCustomDays((prev) => {
-      const next = new Set(prev)
-      if (next.has(day)) next.delete(day)
-      else next.add(day)
-      return next
-    })
-  }
-
-  // Show dialog on mount (component is conditionally rendered by parent)
-  useEffect(() => {
-    const dialog = dialogRef.current
-    if (dialog) dialog.showModal()
-  }, [])
-
-  // Close on Escape key
-  useEffect(() => {
-    const dialog = dialogRef.current
-    if (!dialog) return
-    const handleCancel = () => onClose()
-    dialog.addEventListener('cancel', handleCancel)
-    return () => dialog.removeEventListener('cancel', handleCancel)
-  }, [onClose])
-
-  function handleSubmit(formData: FormData) {
-    // All-day: override time and duration
-    if (isAllDay) {
-      formData.set('time', '00:00')
-      formData.set('duration', '1440')
-    } else {
-      formData.set('duration', String(effectiveDuration))
-    }
-    // Inject actual time spent (retroactive logging)
-    const actualMinutes = logActualTime ? Math.max(0, actualHours * 60 + actualMins) : 0
-    formData.set('actualTimeMinutes', String(actualMinutes))
-    // Inject recurrence fields
-    formData.set('recurrenceType', recurrenceType)
-    formData.set('recurrenceEndType', recurrenceEndType)
-    if (recurrenceEndType === 'count') {
-      formData.set('recurrenceCount', String(recurrenceCount))
-    }
-    if (recurrenceEndType === 'date') {
-      formData.set('recurrenceEndDate', recurrenceEndDate)
-    }
-    if (recurrenceType === 'custom') {
-      formData.set('recurrenceInterval', String(customInterval))
-      formData.set('recurrenceUnit', customUnit)
-      formData.set('recurrenceDays', JSON.stringify([...customDays].sort((a, b) => a - b)))
-      formData.set('recurrenceExcludeHolidays', String(customExcludeHolidays))
-    }
-    setError(null)
-    startTransition(async () => {
-      try {
-        const result = await createActivity(formData)
-        if (result.error) {
-          setError(result.error)
-        } else {
-          onClose()
-        }
-      } catch {
-        setError('Error inesperado al crear la actividad')
-      }
-    })
-  }
-
-  // Build recurrence preview text
   const recurrencePreview =
     recurrenceType !== 'none'
       ? describeRecurrence(
@@ -220,30 +133,154 @@ export function NewActivityModal({ onClose, defaultDate, calendars = [] }: NewAc
         )
       : ''
 
+  // ── Handlers ────────────────────────────────────────────────────────────────
+
+  const handleRecurrenceTypeChange = (type: RecurrenceType) => {
+    setRecurrenceType(type)
+    if (type === 'custom') {
+      setRecurrenceEndType('never')
+      setRecurrenceCount(RECURRENCE_DEFAULTS.custom)
+    } else {
+      setRecurrenceEndType('count')
+      setRecurrenceCount(RECURRENCE_DEFAULTS[type])
+    }
+  }
+
+  const toggleCustomDay = (day: number) => {
+    setCustomDays((prev) => {
+      const next = new Set(prev)
+      if (next.has(day)) next.delete(day)
+      else next.add(day)
+      return next
+    })
+  }
+
+  useEffect(() => {
+    const dialog = dialogRef.current
+    if (dialog) dialog.showModal()
+  }, [])
+
+  useEffect(() => {
+    const dialog = dialogRef.current
+    if (!dialog) return
+    const handleCancel = () => onClose()
+    dialog.addEventListener('cancel', handleCancel)
+    return () => dialog.removeEventListener('cancel', handleCancel)
+  }, [onClose])
+
+  function handleSubmit(formData: FormData) {
+    if (mode === 'log') {
+      // Registrar actividad pasada: duración = tiempo real gastado
+      const totalMins = Math.max(1, logHours * 60 + logMins)
+      formData.set('duration', String(totalMins))
+      formData.set('actualTimeMinutes', String(totalMins))
+      formData.set('recurrenceType', 'none')
+    } else {
+      // Planear actividad futura
+      if (isAllDay) {
+        formData.set('time', '00:00')
+        formData.set('duration', '1440')
+      } else {
+        formData.set('duration', String(effectiveDuration))
+      }
+      formData.set('actualTimeMinutes', '0')
+      formData.set('recurrenceType', recurrenceType)
+      formData.set('recurrenceEndType', recurrenceEndType)
+      if (recurrenceEndType === 'count') formData.set('recurrenceCount', String(recurrenceCount))
+      if (recurrenceEndType === 'date') formData.set('recurrenceEndDate', recurrenceEndDate)
+      if (recurrenceType === 'custom') {
+        formData.set('recurrenceInterval', String(customInterval))
+        formData.set('recurrenceUnit', customUnit)
+        formData.set('recurrenceDays', JSON.stringify([...customDays].sort((a, b) => a - b)))
+        formData.set('recurrenceExcludeHolidays', String(customExcludeHolidays))
+      }
+    }
+
+    setError(null)
+    startTransition(async () => {
+      try {
+        const result = await createActivity(formData)
+        if (result.error) {
+          setError(result.error)
+        } else {
+          onClose()
+        }
+      } catch {
+        setError('Error inesperado al crear la actividad')
+      }
+    })
+  }
+
+  // ── Shared sub-components ───────────────────────────────────────────────────
+
+  const inputCls =
+    'w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50'
+  const selectCls =
+    'w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50'
+
+  // ── Render ──────────────────────────────────────────────────────────────────
+
   return (
     <dialog
       ref={dialogRef}
-      className="rounded-xl border border-border bg-card text-foreground shadow-xl backdrop:bg-black/40 p-0 w-full max-w-md"
+      className="m-auto rounded-xl border border-border bg-card text-foreground shadow-xl backdrop:bg-black/40 p-0 w-full max-w-md"
       onClick={(e) => {
-        // Close when clicking the backdrop
         if (e.target === dialogRef.current) onClose()
       }}
     >
-      {/* Header */}
-      <div className="flex items-center justify-between px-6 py-4 border-b border-border">
-        <h2 className="text-base font-semibold text-foreground">Nueva Actividad</h2>
-        <button
-          onClick={onClose}
-          aria-label="Cerrar"
-          className="rounded-md p-1 text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-        >
-          <X className="h-4 w-4" />
-        </button>
+      {/* ── Header con tabs ── */}
+      <div className="border-b border-border">
+        {/* Fila título + cerrar */}
+        <div className="flex items-center justify-between px-6 pt-4 pb-3">
+          <h2 className="text-base font-semibold text-foreground">Nueva Actividad</h2>
+          <button
+            onClick={onClose}
+            aria-label="Cerrar"
+            className="rounded-md p-1 text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        {/* Tabs */}
+        <div className="flex px-6 gap-1 pb-0">
+          <button
+            type="button"
+            onClick={() => setMode('plan')}
+            className={`flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-t-lg border-b-2 transition-colors ${
+              mode === 'plan'
+                ? 'border-primary text-primary bg-primary/5'
+                : 'border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/50'
+            }`}
+          >
+            <CalendarDays className="h-3.5 w-3.5" />
+            Planear
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode('log')}
+            className={`flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-t-lg border-b-2 transition-colors ${
+              mode === 'log'
+                ? 'border-primary text-primary bg-primary/5'
+                : 'border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/50'
+            }`}
+          >
+            <CheckCircle2 className="h-3.5 w-3.5" />
+            Registrar
+          </button>
+        </div>
       </div>
 
-      {/* Form */}
-      <form action={handleSubmit} className="px-6 py-4 space-y-4 max-h-[80vh] overflow-y-auto">
-        {/* Title */}
+      {/* ── Form ── */}
+      <form action={handleSubmit} className="px-6 py-4 space-y-4 max-h-[75vh] overflow-y-auto">
+        {/* Descripción del modo activo */}
+        <p className="text-xs text-muted-foreground">
+          {mode === 'plan'
+            ? 'Planea una actividad futura en tu calendario.'
+            : 'Registra algo que ya hiciste para llevar el control de tu tiempo.'}
+        </p>
+
+        {/* ── Título (compartido) ── */}
         <div className="space-y-1">
           <label htmlFor="title" className="text-sm font-medium text-foreground">
             Título <span className="text-red-500">*</span>
@@ -254,12 +291,12 @@ export function NewActivityModal({ onClose, defaultDate, calendars = [] }: NewAc
             type="text"
             required
             maxLength={100}
-            placeholder="Ej. Revisión semanal"
-            className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+            placeholder={mode === 'plan' ? 'Ej. Revisión semanal' : 'Ej. Llamada con cliente'}
+            className={inputCls}
           />
         </div>
 
-        {/* Description */}
+        {/* ── Descripción (compartido) ── */}
         <div className="space-y-1">
           <label htmlFor="description" className="text-sm font-medium text-foreground">
             Descripción
@@ -275,7 +312,7 @@ export function NewActivityModal({ onClose, defaultDate, calendars = [] }: NewAc
           />
         </div>
 
-        {/* Date + Time row */}
+        {/* ── Fecha + Hora ── */}
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1">
             <label htmlFor="date" className="text-sm font-medium text-foreground">
@@ -287,158 +324,389 @@ export function NewActivityModal({ onClose, defaultDate, calendars = [] }: NewAc
               type="date"
               required
               defaultValue={format(defaultDate, 'yyyy-MM-dd')}
-              className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+              max={mode === 'log' ? format(new Date(), 'yyyy-MM-dd') : undefined}
+              className={inputCls}
             />
           </div>
+
           <div className="space-y-1">
-            <div className="flex items-center justify-between">
-              <label htmlFor="time" className="text-sm font-medium text-foreground">
-                Hora {!isAllDay && <span className="text-red-500">*</span>}
-              </label>
-              <label className="flex items-center gap-1.5 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={isAllDay}
-                  onChange={(e) => setIsAllDay(e.target.checked)}
-                  className="accent-primary"
-                />
-                <span className="text-xs text-muted-foreground">Todo el día</span>
-              </label>
-            </div>
-            {isAllDay ? (
-              <div className="w-full rounded-xl border border-border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
-                Todo el día
-              </div>
+            {mode === 'plan' ? (
+              <>
+                <div className="flex items-center justify-between">
+                  <label htmlFor="time" className="text-sm font-medium text-foreground">
+                    Hora {!isAllDay && <span className="text-red-500">*</span>}
+                  </label>
+                  <label className="flex items-center gap-1.5 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={isAllDay}
+                      onChange={(e) => setIsAllDay(e.target.checked)}
+                      className="accent-primary"
+                    />
+                    <span className="text-xs text-muted-foreground">Todo el día</span>
+                  </label>
+                </div>
+                {isAllDay ? (
+                  <div className="w-full rounded-xl border border-border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
+                    Todo el día
+                  </div>
+                ) : (
+                  <input
+                    id="time"
+                    name="time"
+                    type="time"
+                    required
+                    defaultValue={defaultTime}
+                    className={inputCls}
+                  />
+                )}
+              </>
             ) : (
-              <input
-                id="time"
-                name="time"
-                type="time"
-                required
-                defaultValue={defaultTime}
-                className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
-              />
+              <>
+                <label htmlFor="time" className="text-sm font-medium text-foreground">
+                  Hora <span className="text-red-500">*</span>
+                </label>
+                <input
+                  id="time"
+                  name="time"
+                  type="time"
+                  required
+                  defaultValue={defaultTime}
+                  className={inputCls}
+                />
+              </>
             )}
           </div>
         </div>
 
-        {/* Duration (Story 10.6 — oculto si es todo el día) */}
-        {!isAllDay && (
-          <div className="space-y-1">
-            <label htmlFor="durationSelect" className="text-sm font-medium text-foreground">
-              Duración
-            </label>
-            <select
-              id="durationSelect"
-              value={durationMode === 'custom' ? 0 : presetDuration}
-              onChange={(e) => {
-                const val = Number(e.target.value)
-                if (val === 0) {
-                  setDurationMode('custom')
-                } else {
-                  setDurationMode('preset')
-                  setPresetDuration(val)
-                }
-              }}
-              className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
-            >
-              {DURATION_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-
-            {/* Custom duration inputs — visible only when 'Personalizado' is selected */}
-            {durationMode === 'custom' && (
-              <div className="flex items-center gap-2 mt-2">
-                <div className="flex items-center gap-1">
-                  <input
-                    type="number"
-                    min={0}
-                    max={23}
-                    value={customHours}
-                    onChange={(e) =>
-                      setCustomHours(Math.max(0, Math.min(23, Number(e.target.value))))
+        {/* ══ TAB: PLANEAR ══════════════════════════════════════════════════════ */}
+        {mode === 'plan' && (
+          <>
+            {/* Duración */}
+            {!isAllDay && (
+              <div className="space-y-1">
+                <label htmlFor="durationSelect" className="text-sm font-medium text-foreground">
+                  Duración estimada
+                </label>
+                <select
+                  id="durationSelect"
+                  value={durationMode === 'custom' ? 0 : presetDuration}
+                  onChange={(e) => {
+                    const val = Number(e.target.value)
+                    if (val === 0) {
+                      setDurationMode('custom')
+                    } else {
+                      setDurationMode('preset')
+                      setPresetDuration(val)
                     }
-                    className="w-14 rounded-lg border border-border bg-background px-2 py-1 text-sm text-center focus:outline-none focus:ring-2 focus:ring-primary/50"
-                  />
-                  <span className="text-sm text-muted-foreground">h</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <select
-                    value={customMins}
-                    onChange={(e) => setCustomMins(Number(e.target.value))}
-                    className="w-16 rounded-lg border border-border bg-background px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
-                  >
-                    {[0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55].map((m) => (
-                      <option key={m} value={m}>
-                        {String(m).padStart(2, '0')}
-                      </option>
-                    ))}
-                  </select>
-                  <span className="text-sm text-muted-foreground">min</span>
-                </div>
-                <span className="text-xs text-muted-foreground ml-1">
-                  = {effectiveDuration} min
-                </span>
+                  }}
+                  className={selectCls}
+                >
+                  {DURATION_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+                {durationMode === 'custom' && (
+                  <div className="flex items-center gap-2 mt-2">
+                    <div className="flex items-center gap-1">
+                      <input
+                        type="number"
+                        min={0}
+                        max={23}
+                        value={customHours}
+                        onChange={(e) =>
+                          setCustomHours(Math.max(0, Math.min(23, Number(e.target.value))))
+                        }
+                        className="w-14 rounded-lg border border-border bg-background px-2 py-1 text-sm text-center focus:outline-none focus:ring-2 focus:ring-primary/50"
+                      />
+                      <span className="text-sm text-muted-foreground">h</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <select
+                        value={customMins}
+                        onChange={(e) => setCustomMins(Number(e.target.value))}
+                        className="w-16 rounded-lg border border-border bg-background px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                      >
+                        {[0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55].map((m) => (
+                          <option key={m} value={m}>
+                            {String(m).padStart(2, '0')}
+                          </option>
+                        ))}
+                      </select>
+                      <span className="text-sm text-muted-foreground">min</span>
+                    </div>
+                    <span className="text-xs text-muted-foreground ml-1">
+                      = {effectiveDuration} min
+                    </span>
+                  </div>
+                )}
               </div>
             )}
+
+            {/* Recurrencia */}
+            <div className="space-y-3 border-t border-border pt-4">
+              <div className="flex items-center gap-2">
+                <RefreshCw className="h-4 w-4 text-muted-foreground shrink-0" />
+                <label htmlFor="recurrenceType" className="text-sm font-medium text-foreground">
+                  Repetir
+                </label>
+              </div>
+
+              <select
+                id="recurrenceType"
+                value={recurrenceType}
+                onChange={(e) => handleRecurrenceTypeChange(e.target.value as RecurrenceType)}
+                className={selectCls}
+              >
+                {RECURRENCE_OPTIONS.map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+
+              {recurrenceType !== 'none' && recurrenceType !== 'custom' && (
+                <div className="space-y-3 pl-1">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                    Termina
+                  </p>
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="recurrenceEndType"
+                      value="never"
+                      checked={recurrenceEndType === 'never'}
+                      onChange={() => setRecurrenceEndType('never')}
+                      className="accent-primary"
+                    />
+                    <span className="text-sm text-foreground">Nunca</span>
+                  </label>
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="recurrenceEndType"
+                      value="count"
+                      checked={recurrenceEndType === 'count'}
+                      onChange={() => setRecurrenceEndType('count')}
+                      className="accent-primary"
+                    />
+                    <span className="text-sm text-foreground flex items-center gap-2">
+                      Después de
+                      <input
+                        type="number"
+                        min={1}
+                        max={365}
+                        value={recurrenceCount}
+                        disabled={recurrenceEndType !== 'count'}
+                        onChange={(e) => setRecurrenceCount(Math.max(1, Number(e.target.value)))}
+                        className="w-16 rounded-lg border border-border bg-background px-2 py-1 text-sm text-center focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50"
+                        onClick={() => setRecurrenceEndType('count')}
+                      />
+                      ocurrencias
+                    </span>
+                  </label>
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="recurrenceEndType"
+                      value="date"
+                      checked={recurrenceEndType === 'date'}
+                      onChange={() => setRecurrenceEndType('date')}
+                      className="accent-primary"
+                    />
+                    <span className="text-sm text-foreground flex items-center gap-2">
+                      El día
+                      <input
+                        type="date"
+                        value={recurrenceEndDate}
+                        disabled={recurrenceEndType !== 'date'}
+                        min={format(defaultDate, 'yyyy-MM-dd')}
+                        onChange={(e) => setRecurrenceEndDate(e.target.value)}
+                        className="rounded-lg border border-border bg-background px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50"
+                        onClick={() => setRecurrenceEndType('date')}
+                      />
+                    </span>
+                  </label>
+                </div>
+              )}
+
+              {recurrenceType === 'custom' && (
+                <div className="space-y-3 pl-1 border border-border rounded-xl p-3 bg-muted/20">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-sm text-foreground">Repetir cada</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={99}
+                      value={customInterval}
+                      onChange={(e) => setCustomInterval(Math.max(1, Number(e.target.value)))}
+                      className="w-14 rounded-lg border border-border bg-background px-2 py-1 text-sm text-center focus:outline-none focus:ring-2 focus:ring-primary/50"
+                    />
+                    <select
+                      value={customUnit}
+                      onChange={(e) => setCustomUnit(e.target.value as RecurrenceUnit)}
+                      className="rounded-lg border border-border bg-background px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                    >
+                      {UNIT_OPTIONS.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  {customUnit === 'week' && (
+                    <div className="space-y-2">
+                      <p className="text-xs text-muted-foreground">Repetir el</p>
+                      <div className="flex gap-1">
+                        {DAY_LABELS.map((label, idx) => (
+                          <button
+                            key={idx}
+                            type="button"
+                            onClick={() => toggleCustomDay(idx)}
+                            className={`w-8 h-8 rounded-full text-xs font-medium transition-colors ${
+                              customDays.has(idx)
+                                ? 'bg-primary text-primary-foreground'
+                                : 'bg-muted text-muted-foreground hover:bg-muted/80'
+                            }`}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {customUnit === 'week' && customDays.size > 0 && (
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={customExcludeHolidays}
+                        onChange={(e) => setCustomExcludeHolidays(e.target.checked)}
+                        className="accent-primary"
+                      />
+                      <span className="text-sm text-foreground">Excluir festivos</span>
+                    </label>
+                  )}
+                  <div className="space-y-2">
+                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                      Finaliza
+                    </p>
+                    <label className="flex items-center gap-3 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="recurrenceEndTypeCustom"
+                        value="never"
+                        checked={recurrenceEndType === 'never'}
+                        onChange={() => setRecurrenceEndType('never')}
+                        className="accent-primary"
+                      />
+                      <span className="text-sm text-foreground">Nunca</span>
+                    </label>
+                    <label className="flex items-center gap-3 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="recurrenceEndTypeCustom"
+                        value="date"
+                        checked={recurrenceEndType === 'date'}
+                        onChange={() => setRecurrenceEndType('date')}
+                        className="accent-primary"
+                      />
+                      <span className="text-sm text-foreground flex items-center gap-2">
+                        El
+                        <input
+                          type="date"
+                          value={recurrenceEndDate}
+                          disabled={recurrenceEndType !== 'date'}
+                          min={format(defaultDate, 'yyyy-MM-dd')}
+                          onChange={(e) => setRecurrenceEndDate(e.target.value)}
+                          className="rounded-lg border border-border bg-background px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50"
+                          onClick={() => setRecurrenceEndType('date')}
+                        />
+                      </span>
+                    </label>
+                    <label className="flex items-center gap-3 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="recurrenceEndTypeCustom"
+                        value="count"
+                        checked={recurrenceEndType === 'count'}
+                        onChange={() => setRecurrenceEndType('count')}
+                        className="accent-primary"
+                      />
+                      <span className="text-sm text-foreground flex items-center gap-2">
+                        Después de
+                        <input
+                          type="number"
+                          min={1}
+                          max={365}
+                          value={recurrenceCount}
+                          disabled={recurrenceEndType !== 'count'}
+                          onChange={(e) => setRecurrenceCount(Math.max(1, Number(e.target.value)))}
+                          className="w-16 rounded-lg border border-border bg-background px-2 py-1 text-sm text-center focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50"
+                          onClick={() => setRecurrenceEndType('count')}
+                        />
+                        ocurrencias
+                      </span>
+                    </label>
+                  </div>
+                </div>
+              )}
+
+              {recurrencePreview && (
+                <p className="text-xs text-primary bg-primary/8 rounded-lg px-3 py-2">
+                  {recurrencePreview}
+                </p>
+              )}
+            </div>
+          </>
+        )}
+
+        {/* ══ TAB: REGISTRAR ════════════════════════════════════════════════════ */}
+        {mode === 'log' && (
+          <div className="space-y-1 rounded-xl border border-border bg-muted/20 p-4">
+            <label className="text-sm font-medium text-foreground">
+              Tiempo dedicado <span className="text-red-500">*</span>
+            </label>
+            <p className="text-xs text-muted-foreground mb-2">
+              ¿Cuánto tiempo le dedicaste a esta actividad?
+            </p>
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-1.5">
+                <input
+                  type="number"
+                  min={0}
+                  max={23}
+                  value={logHours}
+                  onChange={(e) => setLogHours(Math.max(0, Math.min(23, Number(e.target.value))))}
+                  className="w-16 rounded-lg border border-border bg-background px-2 py-2 text-sm text-center focus:outline-none focus:ring-2 focus:ring-primary/50"
+                />
+                <span className="text-sm text-muted-foreground">h</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <select
+                  value={logMins}
+                  onChange={(e) => setLogMins(Number(e.target.value))}
+                  className="w-20 rounded-lg border border-border bg-background px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                >
+                  {[0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55].map((m) => (
+                    <option key={m} value={m}>
+                      {String(m).padStart(2, '0')}
+                    </option>
+                  ))}
+                </select>
+                <span className="text-sm text-muted-foreground">min</span>
+              </div>
+              {(logHours > 0 || logMins > 0) && (
+                <span className="text-xs text-primary font-medium">
+                  = {logHours * 60 + logMins} min
+                </span>
+              )}
+            </div>
           </div>
         )}
 
-        {/* Tiempo real gastado — solo para actividades no recurrentes */}
-        {recurrenceType === 'none' && (
-          <div className="space-y-2">
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={logActualTime}
-                onChange={(e) => setLogActualTime(e.target.checked)}
-                className="accent-primary"
-              />
-              <span className="text-sm font-medium text-foreground">
-                Registrar tiempo real gastado
-              </span>
-            </label>
-            {logActualTime && (
-              <div className="flex items-center gap-2 pl-6">
-                <div className="flex items-center gap-1">
-                  <input
-                    type="number"
-                    min={0}
-                    max={23}
-                    value={actualHours}
-                    onChange={(e) =>
-                      setActualHours(Math.max(0, Math.min(23, Number(e.target.value))))
-                    }
-                    className="w-14 rounded-lg border border-border bg-background px-2 py-1 text-sm text-center focus:outline-none focus:ring-2 focus:ring-primary/50"
-                  />
-                  <span className="text-sm text-muted-foreground">h</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <select
-                    value={actualMins}
-                    onChange={(e) => setActualMins(Number(e.target.value))}
-                    className="w-16 rounded-lg border border-border bg-background px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
-                  >
-                    {[0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55].map((m) => (
-                      <option key={m} value={m}>
-                        {String(m).padStart(2, '0')}
-                      </option>
-                    ))}
-                  </select>
-                  <span className="text-sm text-muted-foreground">min</span>
-                </div>
-                <span className="text-xs text-muted-foreground ml-1">
-                  = {actualHours * 60 + actualMins} min
-                </span>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Calendar picker */}
+        {/* ── Calendario (compartido) ── */}
         <div className="space-y-1">
           <div className="flex items-center justify-between">
             <label htmlFor="calendarId" className="text-sm font-medium text-foreground">
@@ -457,7 +725,7 @@ export function NewActivityModal({ onClose, defaultDate, calendars = [] }: NewAc
             name="calendarId"
             value={selectedCalId}
             onChange={(e) => setSelectedCalId(e.target.value)}
-            className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+            className={selectCls}
           >
             <option value="">Sin calendario</option>
             {localCalendars.map((cal) => (
@@ -478,7 +746,7 @@ export function NewActivityModal({ onClose, defaultDate, calendars = [] }: NewAc
                 className="w-full rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/50"
               />
               <ColorPicker value={newCalColor} onChange={setNewCalColor} />
-              <div className="flex gap-1">
+              <div className="flex gap-1 flex-wrap">
                 <button
                   type="button"
                   disabled={!newCalName.trim() || isCreatingCal}
@@ -529,249 +797,17 @@ export function NewActivityModal({ onClose, defaultDate, calendars = [] }: NewAc
           )}
         </div>
 
-        {/* ── Recurrencia (Story 10.4 / 10.6 / 10.7) ──────────────────────── */}
-        <div className="space-y-3 border-t border-border pt-4">
-          <div className="flex items-center gap-2">
-            <RefreshCw className="h-4 w-4 text-muted-foreground shrink-0" />
-            <label htmlFor="recurrenceType" className="text-sm font-medium text-foreground">
-              Repetir
-            </label>
-          </div>
-
-          <select
-            id="recurrenceType"
-            value={recurrenceType}
-            onChange={(e) => handleRecurrenceTypeChange(e.target.value as RecurrenceType)}
-            className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
-          >
-            {RECURRENCE_OPTIONS.map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </select>
-
-          {/* End options for simple types (daily / weekly / monthly / yearly) */}
-          {recurrenceType !== 'none' && recurrenceType !== 'custom' && (
-            <div className="space-y-3 pl-1">
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                Termina
-              </p>
-
-              {/* Never */}
-              <label className="flex items-center gap-3 cursor-pointer">
-                <input
-                  type="radio"
-                  name="recurrenceEndType"
-                  value="never"
-                  checked={recurrenceEndType === 'never'}
-                  onChange={() => setRecurrenceEndType('never')}
-                  className="accent-primary"
-                />
-                <span className="text-sm text-foreground">Nunca</span>
-              </label>
-
-              {/* After N occurrences */}
-              <label className="flex items-center gap-3 cursor-pointer">
-                <input
-                  type="radio"
-                  name="recurrenceEndType"
-                  value="count"
-                  checked={recurrenceEndType === 'count'}
-                  onChange={() => setRecurrenceEndType('count')}
-                  className="accent-primary"
-                />
-                <span className="text-sm text-foreground flex items-center gap-2">
-                  Después de
-                  <input
-                    type="number"
-                    min={1}
-                    max={365}
-                    value={recurrenceCount}
-                    disabled={recurrenceEndType !== 'count'}
-                    onChange={(e) => setRecurrenceCount(Math.max(1, Number(e.target.value)))}
-                    className="w-16 rounded-lg border border-border bg-background px-2 py-1 text-sm text-center focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50"
-                    onClick={() => setRecurrenceEndType('count')}
-                  />
-                  ocurrencias
-                </span>
-              </label>
-
-              {/* On specific date */}
-              <label className="flex items-center gap-3 cursor-pointer">
-                <input
-                  type="radio"
-                  name="recurrenceEndType"
-                  value="date"
-                  checked={recurrenceEndType === 'date'}
-                  onChange={() => setRecurrenceEndType('date')}
-                  className="accent-primary"
-                />
-                <span className="text-sm text-foreground flex items-center gap-2">
-                  El día
-                  <input
-                    type="date"
-                    value={recurrenceEndDate}
-                    disabled={recurrenceEndType !== 'date'}
-                    min={format(defaultDate, 'yyyy-MM-dd')}
-                    onChange={(e) => setRecurrenceEndDate(e.target.value)}
-                    className="rounded-lg border border-border bg-background px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50"
-                    onClick={() => setRecurrenceEndType('date')}
-                  />
-                </span>
-              </label>
-            </div>
-          )}
-
-          {/* ── Custom recurrence panel (Story 10.7) ───────────────────── */}
-          {recurrenceType === 'custom' && (
-            <div className="space-y-3 pl-1 border border-border rounded-xl p-3 bg-muted/20">
-              {/* Interval + Unit */}
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-sm text-foreground">Repetir cada</span>
-                <input
-                  type="number"
-                  min={1}
-                  max={99}
-                  value={customInterval}
-                  onChange={(e) => setCustomInterval(Math.max(1, Number(e.target.value)))}
-                  className="w-14 rounded-lg border border-border bg-background px-2 py-1 text-sm text-center focus:outline-none focus:ring-2 focus:ring-primary/50"
-                />
-                <select
-                  value={customUnit}
-                  onChange={(e) => setCustomUnit(e.target.value as RecurrenceUnit)}
-                  className="rounded-lg border border-border bg-background px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
-                >
-                  {UNIT_OPTIONS.map((opt) => (
-                    <option key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Day toggles — only when unit='week' */}
-              {customUnit === 'week' && (
-                <div className="space-y-2">
-                  <p className="text-xs text-muted-foreground">Repetir el</p>
-                  <div className="flex gap-1">
-                    {DAY_LABELS.map((label, idx) => (
-                      <button
-                        key={idx}
-                        type="button"
-                        onClick={() => toggleCustomDay(idx)}
-                        className={`w-8 h-8 rounded-full text-xs font-medium transition-colors ${
-                          customDays.has(idx)
-                            ? 'bg-primary text-primary-foreground'
-                            : 'bg-muted text-muted-foreground hover:bg-muted/80'
-                        }`}
-                      >
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Excluir festivos — only when unit='week' and days selected */}
-              {customUnit === 'week' && customDays.size > 0 && (
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={customExcludeHolidays}
-                    onChange={(e) => setCustomExcludeHolidays(e.target.checked)}
-                    className="accent-primary"
-                  />
-                  <span className="text-sm text-foreground">Excluir festivos</span>
-                </label>
-              )}
-
-              {/* Finaliza */}
-              <div className="space-y-2">
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                  Finaliza
-                </p>
-
-                <label className="flex items-center gap-3 cursor-pointer">
-                  <input
-                    type="radio"
-                    name="recurrenceEndTypeCustom"
-                    value="never"
-                    checked={recurrenceEndType === 'never'}
-                    onChange={() => setRecurrenceEndType('never')}
-                    className="accent-primary"
-                  />
-                  <span className="text-sm text-foreground">Nunca</span>
-                </label>
-
-                <label className="flex items-center gap-3 cursor-pointer">
-                  <input
-                    type="radio"
-                    name="recurrenceEndTypeCustom"
-                    value="date"
-                    checked={recurrenceEndType === 'date'}
-                    onChange={() => setRecurrenceEndType('date')}
-                    className="accent-primary"
-                  />
-                  <span className="text-sm text-foreground flex items-center gap-2">
-                    El
-                    <input
-                      type="date"
-                      value={recurrenceEndDate}
-                      disabled={recurrenceEndType !== 'date'}
-                      min={format(defaultDate, 'yyyy-MM-dd')}
-                      onChange={(e) => setRecurrenceEndDate(e.target.value)}
-                      className="rounded-lg border border-border bg-background px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50"
-                      onClick={() => setRecurrenceEndType('date')}
-                    />
-                  </span>
-                </label>
-
-                <label className="flex items-center gap-3 cursor-pointer">
-                  <input
-                    type="radio"
-                    name="recurrenceEndTypeCustom"
-                    value="count"
-                    checked={recurrenceEndType === 'count'}
-                    onChange={() => setRecurrenceEndType('count')}
-                    className="accent-primary"
-                  />
-                  <span className="text-sm text-foreground flex items-center gap-2">
-                    Después de
-                    <input
-                      type="number"
-                      min={1}
-                      max={365}
-                      value={recurrenceCount}
-                      disabled={recurrenceEndType !== 'count'}
-                      onChange={(e) => setRecurrenceCount(Math.max(1, Number(e.target.value)))}
-                      className="w-16 rounded-lg border border-border bg-background px-2 py-1 text-sm text-center focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50"
-                      onClick={() => setRecurrenceEndType('count')}
-                    />
-                    ocurrencias
-                  </span>
-                </label>
-              </div>
-            </div>
-          )}
-
-          {/* Preview */}
-          {recurrencePreview && (
-            <p className="text-xs text-primary bg-primary/8 rounded-lg px-3 py-2">
-              {recurrencePreview}
-            </p>
-          )}
-        </div>
-        {/* ── Fin recurrencia ──────────────────────────────────────────────── */}
-
-        {/* Error message */}
+        {/* Error */}
         {error && (
-          <p role="alert" className="text-sm text-red-500">
+          <p
+            role="alert"
+            className="text-sm text-red-500 bg-red-50 dark:bg-red-950/30 rounded-lg px-3 py-2"
+          >
             {error}
           </p>
         )}
 
-        {/* Actions */}
+        {/* Acciones */}
         <div className="flex justify-end gap-2 pt-2">
           <button
             type="button"
@@ -783,10 +819,18 @@ export function NewActivityModal({ onClose, defaultDate, calendars = [] }: NewAc
           </button>
           <button
             type="submit"
-            disabled={isPending}
+            disabled={isPending || (mode === 'log' && logHours === 0 && logMins === 0)}
             className="rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
           >
-            {isPending ? 'Creando...' : recurrenceType !== 'none' ? `Crear eventos` : 'Crear'}
+            {isPending
+              ? mode === 'plan'
+                ? 'Creando...'
+                : 'Registrando...'
+              : mode === 'plan'
+                ? recurrenceType !== 'none'
+                  ? 'Crear eventos'
+                  : 'Planear'
+                : 'Registrar'}
           </button>
         </div>
       </form>
