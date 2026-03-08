@@ -2,11 +2,11 @@
 
 // app/(app)/calendar/_components/EditActivityModal.tsx
 // Modal para editar o eliminar una actividad existente.
-// Story 10.9: Edición de actividad con soporte para eventos recurrentes (scope: una sola / todas).
+// Story 10.9: Edición con soporte para eventos recurrentes (scope: una sola / todas).
 
 import { useRef, useEffect, useState, useTransition } from 'react'
 import { format } from 'date-fns'
-import { X, Plus, Check } from 'lucide-react'
+import { X, Plus, Check, CalendarDays, RefreshCw, Clock, Trash2 } from 'lucide-react'
 import type { ICalendarEvent } from '@/lib/calendar/calendar-utils'
 import type { Calendar } from '@/lib/db/queries/calendars'
 import {
@@ -17,7 +17,7 @@ import {
 import type { RecurrenceType, RecurrenceOptions } from '@/lib/calendar/recurrence-utils'
 import { ColorPicker, CALENDAR_COLORS } from './CalendarSidebar'
 
-// ─── Duration options ─────────────────────────────────────────────────────────
+// ─── Duration options ──────────────────────────────────────────────────────────
 
 const DURATION_OPTIONS = [
   { value: 15, label: '15 min' },
@@ -29,7 +29,7 @@ const DURATION_OPTIONS = [
   { value: 0, label: 'Personalizado...' },
 ]
 
-// ─── Props ────────────────────────────────────────────────────────────────────
+// ─── Props ─────────────────────────────────────────────────────────────────────
 
 interface EditActivityModalProps {
   event: ICalendarEvent
@@ -37,14 +37,14 @@ interface EditActivityModalProps {
   calendars?: Calendar[]
 }
 
-// ─── EditActivityModal ────────────────────────────────────────────────────────
+// ─── EditActivityModal ─────────────────────────────────────────────────────────
 
 export function EditActivityModal({ event, onClose, calendars = [] }: EditActivityModalProps) {
   const dialogRef = useRef<HTMLDialogElement>(null)
   const [error, setError] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
 
-  // ── Form state ──────────────────────────────────────────────────────────────
+  // ── Form state ─────────────────────────────────────────────────────────────
   const durationMin = Math.round((event.end.getTime() - event.start.getTime()) / 60000)
   const knownPreset = DURATION_OPTIONS.some((o) => o.value === durationMin && o.value !== 0)
 
@@ -60,17 +60,15 @@ export function EditActivityModal({ event, onClose, calendars = [] }: EditActivi
   const [customMins, setCustomMins] = useState(durationMin % 60)
   const [calendarId, setCalendarId] = useState(event.calendarId ?? '')
 
-  // ── Recurrence state (solo cuando isRecurring) ───────────────────────────────
+  // ── Recurrence state (solo cuando isRecurring) ────────────────────────────
   const isRecurring = !!event.recurrenceGroupId
   const initialRecType = (event.recurrenceType as RecurrenceType) ?? 'weekly'
   const [recType, setRecType] = useState<RecurrenceType>(initialRecType)
   const [recEndType, setRecEndType] = useState<'count' | 'date' | 'never'>('never')
   const [recCount, setRecCount] = useState(RECURRENCE_DEFAULTS[initialRecType] ?? 8)
   const [recEndDate, setRecEndDate] = useState('')
-  // "desde" — por defecto la fecha de este evento
   const [recFromDate, setRecFromDate] = useState(format(event.start, 'yyyy-MM-dd'))
 
-  // computed preview
   const recurrencePreview =
     isRecurring && recType !== 'none'
       ? (() => {
@@ -88,12 +86,12 @@ export function EditActivityModal({ event, onClose, calendars = [] }: EditActivi
         })()
       : ''
 
-  // Actual time spent state (retroactive logging)
+  // ── Tiempo real gastado (solo ocurrencia individual) ──────────────────────
   const [logActualTime, setLogActualTime] = useState(false)
   const [actualHours, setActualHours] = useState(0)
   const [actualMins, setActualMins] = useState(30)
 
-  // Local calendars + inline create state
+  // ── Calendarios + inline create ───────────────────────────────────────────
   const [localCalendars, setLocalCalendars] = useState<Calendar[]>(calendars)
   const [showNewCal, setShowNewCal] = useState(false)
   const [newCalName, setNewCalName] = useState('')
@@ -104,10 +102,10 @@ export function EditActivityModal({ event, onClose, calendars = [] }: EditActivi
   const effectiveDuration =
     durationMode === 'custom' ? Math.max(1, customHours * 60 + customMins) : presetDuration
 
-  // ── Recurring scope dialog state ────────────────────────────────────────────
+  // ── Scope dialog para recurrentes ─────────────────────────────────────────
   const [pendingAction, setPendingAction] = useState<'save' | 'delete' | null>(null)
 
-  // ── Lifecycle ───────────────────────────────────────────────────────────────
+  // ── Lifecycle ─────────────────────────────────────────────────────────────
 
   useEffect(() => {
     const dialog = dialogRef.current
@@ -122,7 +120,7 @@ export function EditActivityModal({ event, onClose, calendars = [] }: EditActivi
     return () => dialog.removeEventListener('cancel', handleCancel)
   }, [onClose])
 
-  // ── Handlers ────────────────────────────────────────────────────────────────
+  // ── Handlers ──────────────────────────────────────────────────────────────
 
   function handleSaveClick() {
     if (isRecurring) {
@@ -150,7 +148,6 @@ export function EditActivityModal({ event, onClose, calendars = [] }: EditActivi
       let result
 
       if (scope === 'all' && event.recurrenceGroupId) {
-        // Primero actualizar campos comunes (título, descripción, duración, calendario)
         result = await updateActivityGroup(event.recurrenceGroupId, {
           title,
           description: description.trim() || null,
@@ -158,7 +155,6 @@ export function EditActivityModal({ event, onClose, calendars = [] }: EditActivi
           areaId: null,
           calendarId: calendarId || null,
         })
-        // Si no hay error y la recurrencia cambió, regenerar fechas futuras
         if (!result.error) {
           const recOpts: RecurrenceOptions = {
             type: recType,
@@ -208,21 +204,24 @@ export function EditActivityModal({ event, onClose, calendars = [] }: EditActivi
     })
   }
 
-  // ── Render ──────────────────────────────────────────────────────────────────
+  // ── Render ────────────────────────────────────────────────────────────────
+
+  // Color indicator del calendario
+  const calColor = localCalendars.find((c) => c.id === calendarId)?.color ?? event.calendarColor
 
   return (
     <dialog
       ref={dialogRef}
-      className="m-auto rounded-xl border border-border bg-card text-foreground shadow-xl backdrop:bg-black/40 p-0 w-full max-w-md"
+      className="m-auto rounded-2xl border border-border bg-card text-foreground shadow-2xl backdrop:bg-black/50 p-0 w-full max-w-md"
       onClick={(e) => {
         if (e.target === dialogRef.current) onClose()
       }}
     >
-      {/* Scope dialog for recurring events */}
+      {/* Scope dialog para recurrentes */}
       {pendingAction && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="bg-card border border-border rounded-xl p-6 shadow-xl w-80 space-y-4">
-            <p className="text-sm font-medium text-foreground">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-card border border-border rounded-2xl p-6 shadow-2xl w-80 space-y-4">
+            <p className="text-sm font-semibold text-foreground">
               {pendingAction === 'save' ? '¿Guardar cambios en...' : '¿Eliminar...'}
             </p>
             <div className="flex flex-col gap-2">
@@ -230,7 +229,7 @@ export function EditActivityModal({ event, onClose, calendars = [] }: EditActivi
                 onClick={() =>
                   pendingAction === 'save' ? executeSave('single') : executeDelete('single')
                 }
-                className="w-full rounded-lg border border-border px-4 py-2 text-sm text-foreground hover:bg-muted transition-colors text-left"
+                className="w-full rounded-xl border border-border px-4 py-2.5 text-sm text-foreground hover:bg-muted transition-colors text-left"
               >
                 Solo esta ocurrencia
               </button>
@@ -238,7 +237,7 @@ export function EditActivityModal({ event, onClose, calendars = [] }: EditActivi
                 onClick={() =>
                   pendingAction === 'save' ? executeSave('all') : executeDelete('all')
                 }
-                className={`w-full rounded-lg px-4 py-2 text-sm font-medium transition-colors text-left ${
+                className={`w-full rounded-xl px-4 py-2.5 text-sm font-medium transition-colors text-left ${
                   pendingAction === 'delete'
                     ? 'bg-red-500 text-white hover:bg-red-600'
                     : 'bg-primary text-primary-foreground hover:bg-primary/90'
@@ -250,7 +249,7 @@ export function EditActivityModal({ event, onClose, calendars = [] }: EditActivi
               </button>
               <button
                 onClick={() => setPendingAction(null)}
-                className="w-full rounded-lg border border-border px-4 py-2 text-sm text-muted-foreground hover:bg-muted transition-colors text-left"
+                className="w-full rounded-xl border border-border px-4 py-2.5 text-sm text-muted-foreground hover:bg-muted transition-colors text-left"
               >
                 Cancelar
               </button>
@@ -259,32 +258,45 @@ export function EditActivityModal({ event, onClose, calendars = [] }: EditActivi
         </div>
       )}
 
-      {/* Header */}
-      <div className="flex items-center justify-between px-6 py-4 border-b border-border">
-        <div>
-          <h2 className="text-base font-semibold text-foreground">Editar Actividad</h2>
-          {isRecurring && <p className="text-xs text-muted-foreground mt-0.5">Evento recurrente</p>}
+      {/* ── Header ────────────────────────────────────────────────────────── */}
+      <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+        <div className="flex items-center gap-2.5">
+          {/* Dot indicador de color del calendario */}
+          {calColor && (
+            <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: calColor }} />
+          )}
+          <div>
+            <h2 className="text-base font-semibold text-foreground leading-tight">
+              Editar actividad
+            </h2>
+            {isRecurring && (
+              <div className="flex items-center gap-1 mt-0.5">
+                <RefreshCw className="h-3 w-3 text-muted-foreground" />
+                <span className="text-xs text-muted-foreground">Recurrente</span>
+              </div>
+            )}
+          </div>
         </div>
         <button
           onClick={onClose}
           aria-label="Cerrar"
-          className="rounded-md p-1 text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+          className="rounded-lg p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
         >
           <X className="h-4 w-4" />
         </button>
       </div>
 
-      {/* Form */}
-      <div className="px-6 py-4 space-y-4 max-h-[80vh] overflow-y-auto">
+      {/* ── Body ──────────────────────────────────────────────────────────── */}
+      <div className="px-5 py-4 space-y-4 max-h-[80vh] overflow-y-auto">
         {error && (
-          <p className="text-sm text-red-500 bg-red-50 dark:bg-red-950/30 rounded-lg px-3 py-2">
+          <p className="text-sm text-red-500 bg-red-50 dark:bg-red-950/30 rounded-xl px-3 py-2">
             {error}
           </p>
         )}
 
-        {/* Title */}
-        <div className="space-y-1">
-          <label className="text-sm font-medium text-foreground">
+        {/* Título */}
+        <div className="space-y-1.5">
+          <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             Título <span className="text-red-500">*</span>
           </label>
           <input
@@ -292,53 +304,58 @@ export function EditActivityModal({ event, onClose, calendars = [] }: EditActivi
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             maxLength={100}
-            className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+            placeholder="Nombre de la actividad"
+            className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
           />
         </div>
 
-        {/* Description */}
-        <div className="space-y-1">
-          <label className="text-sm font-medium text-foreground">Descripción</label>
+        {/* Descripción */}
+        <div className="space-y-1.5">
+          <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Descripción
+          </label>
           <textarea
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             placeholder="Notas opcionales..."
             rows={2}
-            className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none"
+            className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none"
           />
         </div>
 
-        {/* Date + Time — solo visible para ocurrencia individual */}
+        {/* Fecha + Hora — solo para ocurrencias individuales */}
         {!isRecurring && (
           <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1">
-              <label className="text-sm font-medium text-foreground">
-                Fecha <span className="text-red-500">*</span>
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-1">
+                <CalendarDays className="h-3 w-3" /> Fecha
               </label>
               <input
                 type="date"
                 value={date}
                 onChange={(e) => setDate(e.target.value)}
-                className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+                className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
               />
             </div>
-            <div className="space-y-1">
-              <label className="text-sm font-medium text-foreground">
-                Hora <span className="text-red-500">*</span>
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-1">
+                <Clock className="h-3 w-3" /> Hora
               </label>
               <input
                 type="time"
                 value={time}
                 onChange={(e) => setTime(e.target.value)}
-                className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+                className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
               />
             </div>
           </div>
         )}
 
-        {/* Duration */}
-        <div className="space-y-1">
-          <label className="text-sm font-medium text-foreground">Duración</label>
+        {/* Duración */}
+        <div className="space-y-1.5">
+          <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Duración
+          </label>
           <select
             value={durationMode === 'custom' ? 0 : presetDuration}
             onChange={(e) => {
@@ -350,7 +367,7 @@ export function EditActivityModal({ event, onClose, calendars = [] }: EditActivi
                 setPresetDuration(val)
               }
             }}
-            className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+            className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
           >
             {DURATION_OPTIONS.map((opt) => (
               <option key={opt.value} value={opt.value}>
@@ -370,7 +387,7 @@ export function EditActivityModal({ event, onClose, calendars = [] }: EditActivi
                   onChange={(e) =>
                     setCustomHours(Math.max(0, Math.min(23, Number(e.target.value))))
                   }
-                  className="w-14 rounded-lg border border-border bg-background px-2 py-1 text-sm text-center focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  className="w-14 rounded-lg border border-border bg-background px-2 py-1.5 text-sm text-center focus:outline-none focus:ring-2 focus:ring-primary/50"
                 />
                 <span className="text-sm text-muted-foreground">h</span>
               </div>
@@ -378,7 +395,7 @@ export function EditActivityModal({ event, onClose, calendars = [] }: EditActivi
                 <select
                   value={customMins}
                   onChange={(e) => setCustomMins(Number(e.target.value))}
-                  className="w-16 rounded-lg border border-border bg-background px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  className="w-16 rounded-lg border border-border bg-background px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
                 >
                   {[0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55].map((m) => (
                     <option key={m} value={m}>
@@ -395,7 +412,7 @@ export function EditActivityModal({ event, onClose, calendars = [] }: EditActivi
 
         {/* Tiempo real gastado — solo para ocurrencias individuales */}
         {!isRecurring && (
-          <div className="space-y-2">
+          <div className="rounded-xl border border-border bg-muted/20 p-3 space-y-2">
             <label className="flex items-center gap-2 cursor-pointer">
               <input
                 type="checkbox"
@@ -403,12 +420,10 @@ export function EditActivityModal({ event, onClose, calendars = [] }: EditActivi
                 onChange={(e) => setLogActualTime(e.target.checked)}
                 className="accent-primary"
               />
-              <span className="text-sm font-medium text-foreground">
-                Agregar tiempo real gastado
-              </span>
+              <span className="text-sm font-medium text-foreground">Registrar tiempo real</span>
             </label>
             {logActualTime && (
-              <div className="flex items-center gap-2 pl-6">
+              <div className="flex items-center gap-2 pl-5">
                 <div className="flex items-center gap-1">
                   <input
                     type="number"
@@ -418,7 +433,7 @@ export function EditActivityModal({ event, onClose, calendars = [] }: EditActivi
                     onChange={(e) =>
                       setActualHours(Math.max(0, Math.min(23, Number(e.target.value))))
                     }
-                    className="w-14 rounded-lg border border-border bg-background px-2 py-1 text-sm text-center focus:outline-none focus:ring-2 focus:ring-primary/50"
+                    className="w-14 rounded-lg border border-border bg-background px-2 py-1.5 text-sm text-center focus:outline-none focus:ring-2 focus:ring-primary/50"
                   />
                   <span className="text-sm text-muted-foreground">h</span>
                 </div>
@@ -426,7 +441,7 @@ export function EditActivityModal({ event, onClose, calendars = [] }: EditActivi
                   <select
                     value={actualMins}
                     onChange={(e) => setActualMins(Number(e.target.value))}
-                    className="w-16 rounded-lg border border-border bg-background px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                    className="w-16 rounded-lg border border-border bg-background px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
                   >
                     {[0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55].map((m) => (
                       <option key={m} value={m}>
@@ -447,35 +462,42 @@ export function EditActivityModal({ event, onClose, calendars = [] }: EditActivi
         {/* ── Recurrencia — solo para eventos recurrentes ── */}
         {isRecurring && (
           <div className="space-y-3 rounded-xl border border-border bg-muted/20 p-3">
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-              Recurrencia
-            </p>
+            <div className="flex items-center gap-1.5">
+              <RefreshCw className="h-3.5 w-3.5 text-muted-foreground" />
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                Recurrencia
+              </p>
+            </div>
 
             {/* Tipo */}
-            <div className="space-y-1">
-              <label className="text-sm font-medium text-foreground">Tipo</label>
-              <select
-                value={recType}
-                onChange={(e) => {
-                  const t = e.target.value as RecurrenceType
-                  setRecType(t)
-                  setRecCount(RECURRENCE_DEFAULTS[t] ?? 8)
-                }}
-                className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
-              >
-                {(['daily', 'weekly', 'weekdays', 'monthly', 'yearly'] as RecurrenceType[]).map(
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">Tipo</label>
+              <div className="grid grid-cols-3 gap-1.5">
+                {(['daily', 'weekdays', 'weekly', 'monthly', 'yearly'] as RecurrenceType[]).map(
                   (t) => (
-                    <option key={t} value={t}>
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={() => {
+                        setRecType(t)
+                        setRecCount(RECURRENCE_DEFAULTS[t] ?? 8)
+                      }}
+                      className={`rounded-lg border px-2 py-1.5 text-xs font-medium transition-colors ${
+                        recType === t
+                          ? 'bg-primary text-primary-foreground border-primary'
+                          : 'border-border text-foreground hover:bg-muted'
+                      }`}
+                    >
                       {RECURRENCE_LABELS[t]}
-                    </option>
+                    </button>
                   )
                 )}
-              </select>
+              </div>
             </div>
 
             {/* Fecha desde */}
-            <div className="space-y-1">
-              <label className="text-sm font-medium text-foreground">Aplicar desde</label>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">Aplicar desde</label>
               <input
                 type="date"
                 value={recFromDate}
@@ -483,14 +505,14 @@ export function EditActivityModal({ event, onClose, calendars = [] }: EditActivi
                 className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
               />
               <p className="text-xs text-muted-foreground">
-                Las ocurrencias anteriores a esta fecha se conservan.
+                Las ocurrencias anteriores se conservan.
               </p>
             </div>
 
             {/* Condición de fin */}
-            <div className="space-y-1">
-              <label className="text-sm font-medium text-foreground">Termina</label>
-              <div className="flex gap-2">
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">Termina</label>
+              <div className="flex gap-1.5">
                 {(
                   [
                     { v: 'count', label: 'Después de N' },
@@ -521,7 +543,7 @@ export function EditActivityModal({ event, onClose, calendars = [] }: EditActivi
                     max={365}
                     value={recCount}
                     onChange={(e) => setRecCount(Math.max(1, Number(e.target.value)))}
-                    className="w-20 rounded-lg border border-border bg-background px-2 py-1 text-sm text-center focus:outline-none focus:ring-2 focus:ring-primary/50"
+                    className="w-20 rounded-lg border border-border bg-background px-2 py-1.5 text-sm text-center focus:outline-none focus:ring-2 focus:ring-primary/50"
                   />
                   <span className="text-sm text-muted-foreground">ocurrencias</span>
                 </div>
@@ -546,10 +568,12 @@ export function EditActivityModal({ event, onClose, calendars = [] }: EditActivi
           </div>
         )}
 
-        {/* Calendar */}
-        <div className="space-y-1">
+        {/* Calendario */}
+        <div className="space-y-1.5">
           <div className="flex items-center justify-between">
-            <label className="text-sm font-medium text-foreground">Calendario</label>
+            <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Calendario
+            </label>
             <button
               type="button"
               onClick={() => setShowNewCal((v) => !v)}
@@ -561,7 +585,7 @@ export function EditActivityModal({ event, onClose, calendars = [] }: EditActivi
           <select
             value={calendarId}
             onChange={(e) => setCalendarId(e.target.value)}
-            className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+            className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
           >
             <option value="">Sin calendario</option>
             {localCalendars.map((cal) => (
@@ -571,7 +595,7 @@ export function EditActivityModal({ event, onClose, calendars = [] }: EditActivi
             ))}
           </select>
           {showNewCal && (
-            <div className="space-y-2 rounded-lg border border-border bg-muted/30 p-2">
+            <div className="space-y-2 rounded-xl border border-border bg-muted/30 p-3">
               <input
                 type="text"
                 autoFocus
@@ -579,10 +603,10 @@ export function EditActivityModal({ event, onClose, calendars = [] }: EditActivi
                 onChange={(e) => setNewCalName(e.target.value)}
                 placeholder="Nombre del calendario"
                 maxLength={60}
-                className="w-full rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/50"
+                className="w-full rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/50"
               />
               <ColorPicker value={newCalColor} onChange={setNewCalColor} />
-              <div className="flex gap-1">
+              <div className="flex gap-1.5">
                 <button
                   type="button"
                   disabled={!newCalName.trim() || isCreatingCal}
@@ -610,9 +634,9 @@ export function EditActivityModal({ event, onClose, calendars = [] }: EditActivi
                       setIsCreatingCal(false)
                     }
                   }}
-                  className="flex items-center gap-1 rounded-md bg-primary px-2 py-1 text-[10px] font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+                  className="flex items-center gap-1 rounded-lg bg-primary px-2.5 py-1.5 text-[11px] font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
                 >
-                  <Check className="h-2.5 w-2.5" /> {isCreatingCal ? 'Creando...' : 'Crear'}
+                  <Check className="h-3 w-3" /> {isCreatingCal ? 'Creando...' : 'Crear'}
                 </button>
                 <button
                   type="button"
@@ -621,44 +645,45 @@ export function EditActivityModal({ event, onClose, calendars = [] }: EditActivi
                     setNewCalName('')
                     setNewCalError(null)
                   }}
-                  className="flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[10px] text-muted-foreground hover:text-foreground hover:bg-muted"
+                  className="flex items-center gap-1 rounded-lg border border-border px-2.5 py-1.5 text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted"
                 >
-                  <X className="h-2.5 w-2.5" /> Cancelar
+                  <X className="h-3 w-3" /> Cancelar
                 </button>
               </div>
-              {newCalError && <p className="text-[10px] text-red-500 mt-1">{newCalError}</p>}
+              {newCalError && <p className="text-[10px] text-red-500">{newCalError}</p>}
             </div>
           )}
         </div>
+      </div>
 
-        {/* Actions */}
-        <div className="flex items-center justify-between pt-2 border-t border-border">
+      {/* ── Footer ────────────────────────────────────────────────────────── */}
+      <div className="flex items-center justify-between px-5 py-3 border-t border-border bg-muted/10 rounded-b-2xl">
+        <button
+          type="button"
+          onClick={handleDeleteClick}
+          disabled={isPending}
+          className="flex items-center gap-1.5 rounded-xl px-3 py-2 text-sm font-medium text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors disabled:opacity-50"
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+          Eliminar
+        </button>
+        <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={handleDeleteClick}
+            onClick={onClose}
             disabled={isPending}
-            className="rounded-xl px-4 py-2 text-sm font-medium text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors disabled:opacity-50"
+            className="rounded-xl border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-muted transition-colors disabled:opacity-50"
           >
-            Eliminar
+            Cancelar
           </button>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={isPending}
-              className="rounded-xl border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-muted transition-colors disabled:opacity-50"
-            >
-              Cancelar
-            </button>
-            <button
-              type="button"
-              onClick={handleSaveClick}
-              disabled={isPending || !title.trim()}
-              className="rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
-            >
-              {isPending ? 'Guardando...' : 'Guardar'}
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={handleSaveClick}
+            disabled={isPending || !title.trim()}
+            className="rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
+          >
+            {isPending ? 'Guardando...' : 'Guardar'}
+          </button>
         </div>
       </div>
     </dialog>

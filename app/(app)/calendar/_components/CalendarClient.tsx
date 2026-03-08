@@ -121,6 +121,54 @@ const EVENT_COLOR_CLASSES: Record<string, string> = {
 /** Altura fija de cada fila de hora en la vista semanal/diaria (h-14 = 3.5rem = 56px) */
 const ROW_H = 56
 
+/**
+ * Calcula columnas para eventos solapados en la cuadrícula de tiempo.
+ * Devuelve { col, numCols } por evento para posicionamiento side-by-side.
+ */
+function layoutEvents(events: ICalendarEvent[]): Map<string, { col: number; numCols: number }> {
+  const result = new Map<string, { col: number; numCols: number }>()
+  if (!events.length) return result
+
+  const sorted = [...events].sort(
+    (a, b) => a.start.getTime() - b.start.getTime() || b.end.getTime() - a.end.getTime()
+  )
+
+  // Asignación greedy de columnas: columns[c] = endTime del último evento en columna c
+  const columns: number[] = []
+  const colOf = new Map<string, number>()
+
+  for (const evt of sorted) {
+    const startMs = evt.start.getTime()
+    let placed = -1
+    for (let c = 0; c < columns.length; c++) {
+      if (columns[c] <= startMs) {
+        placed = c
+        break
+      }
+    }
+    if (placed === -1) {
+      placed = columns.length
+      columns.push(0)
+    }
+    columns[placed] = evt.end.getTime()
+    colOf.set(evt.id, placed)
+  }
+
+  // numCols = máximo (col+1) entre todos los eventos que se solapan con éste
+  for (const evt of sorted) {
+    const col = colOf.get(evt.id)!
+    let numCols = col + 1
+    for (const other of sorted) {
+      if (other.id !== evt.id && other.start < evt.end && other.end > evt.start) {
+        numCols = Math.max(numCols, colOf.get(other.id)! + 1)
+      }
+    }
+    result.set(evt.id, { col, numCols })
+  }
+
+  return result
+}
+
 // ─── Event color helpers (Story 10.2 AC5) ────────────────────────────────────
 
 /**
@@ -863,84 +911,98 @@ function DayView({
 
         {/* Events overlay — absolutely positioned, span full duration */}
         <div className="absolute left-16 right-0 top-0 bottom-0 pointer-events-none">
-          {dayEvents.map((evt) => {
-            const startH = evt.start.getHours() + evt.start.getMinutes() / 60
-            const durationH = Math.max(0.5, (evt.end.getTime() - evt.start.getTime()) / 3600000)
-            const top = startH * ROW_H
-            const height = Math.min(durationH, 24 - startH) * ROW_H
+          {(() => {
+            const layout = layoutEvents(dayEvents)
+            return dayEvents.map((evt) => {
+              const startH = evt.start.getHours() + evt.start.getMinutes() / 60
+              const durationH = Math.max(0.5, (evt.end.getTime() - evt.start.getTime()) / 3600000)
+              const top = startH * ROW_H
+              const height = Math.min(durationH, 24 - startH) * ROW_H
 
-            const completedSeconds = timeTotals[evt.id] ?? 0
-            const startedAt = timerStartedAt.get(evt.id)
-            const isRunningTimer =
-              activeTimers.get(evt.id) !== undefined &&
-              !activeTimers.get(evt.id)!.isPaused &&
-              startedAt !== undefined
-            const elapsedSeconds = isRunningTimer
-              ? calcElapsedSeconds(startedAt!, new Date(elapsedTick))
-              : 0
-            const totalForDisplay = completedSeconds + elapsedSeconds
-            const formattedTime = isRunningTimer
-              ? formatElapsed(totalForDisplay)
-              : formatSeconds(completedSeconds)
-            const hexStyle = getEventColorStyle(evt.calendarColor)
+              const { col, numCols } = layout.get(evt.id) ?? { col: 0, numCols: 1 }
+              const pct = 100 / numCols
+              const leftPct = col * pct
+              const widthPct = pct - (numCols > 1 ? 0.5 : 0)
 
-            return (
-              <div
-                key={evt.id}
-                data-event
-                draggable
-                onDragStart={(e) => {
-                  e.dataTransfer.setData('text/plain', evt.id)
-                  e.stopPropagation()
-                }}
-                onDragEnd={() => setDragOverHour(null)}
-                className={`absolute left-0.5 right-0.5 text-sm rounded border-l-2 px-2 py-1 overflow-hidden pointer-events-auto cursor-grab active:cursor-grabbing hover:brightness-105 transition-all ${hexStyle ? '' : EVENT_COLOR_CLASSES[evt.color ?? 'blue']}`}
-                style={{ top, height, ...(hexStyle ?? {}) }}
-                onClick={(e) => {
-                  if ((e.target as HTMLElement).closest('button,select')) return
-                  e.stopPropagation()
-                  onEventClick(evt)
-                }}
-              >
-                <div className="flex items-center gap-2">
-                  <span className="font-medium truncate">{evt.title}</span>
-                  {formattedTime && (
-                    <span
-                      className={`text-[10px] font-mono shrink-0 ${isRunningTimer ? 'text-primary animate-pulse' : 'text-muted-foreground'}`}
-                    >
-                      ⏱ {formattedTime}
-                    </span>
+              const completedSeconds = timeTotals[evt.id] ?? 0
+              const startedAt = timerStartedAt.get(evt.id)
+              const isRunningTimer =
+                activeTimers.get(evt.id) !== undefined &&
+                !activeTimers.get(evt.id)!.isPaused &&
+                startedAt !== undefined
+              const elapsedSeconds = isRunningTimer
+                ? calcElapsedSeconds(startedAt!, new Date(elapsedTick))
+                : 0
+              const totalForDisplay = completedSeconds + elapsedSeconds
+              const formattedTime = isRunningTimer
+                ? formatElapsed(totalForDisplay)
+                : formatSeconds(completedSeconds)
+              const hexStyle = getEventColorStyle(evt.calendarColor)
+
+              return (
+                <div
+                  key={evt.id}
+                  data-event
+                  draggable
+                  onDragStart={(e) => {
+                    e.dataTransfer.setData('text/plain', evt.id)
+                    e.stopPropagation()
+                  }}
+                  onDragEnd={() => setDragOverHour(null)}
+                  className={`absolute text-sm rounded border-l-2 px-2 py-1 overflow-hidden pointer-events-auto cursor-grab active:cursor-grabbing hover:brightness-105 transition-all ${hexStyle ? '' : EVENT_COLOR_CLASSES[evt.color ?? 'blue']}`}
+                  style={{
+                    top,
+                    height,
+                    left: `${leftPct}%`,
+                    width: `${widthPct}%`,
+                    ...(hexStyle ?? {}),
+                  }}
+                  onClick={(e) => {
+                    if ((e.target as HTMLElement).closest('button,select')) return
+                    e.stopPropagation()
+                    onEventClick(evt)
+                  }}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium truncate">{evt.title}</span>
+                    {formattedTime && (
+                      <span
+                        className={`text-[10px] font-mono shrink-0 ${isRunningTimer ? 'text-primary animate-pulse' : 'text-muted-foreground'}`}
+                      >
+                        ⏱ {formattedTime}
+                      </span>
+                    )}
+                  </div>
+                  {evt.description && height >= 56 && (
+                    <div className="text-[11px] text-muted-foreground leading-tight mt-0.5 line-clamp-2">
+                      {evt.description}
+                    </div>
+                  )}
+                  {height >= 48 && (
+                    <>
+                      <EventActionButtons
+                        evt={evt}
+                        onCheckin={handleCheckin}
+                        onDelete={onDelete}
+                        timerState={activeTimers.get(evt.id)}
+                        onStartTimer={onStartTimer}
+                        onStopTimer={onStopTimer}
+                        onPauseTimer={onPauseTimer}
+                        onResumeTimer={onResumeTimer}
+                      />
+                      <SkillTagSection
+                        activityId={evt.id}
+                        userSkills={userSkills}
+                        taggedSkillIds={skillTags[evt.id] ?? []}
+                        onTagSkill={onTagSkill}
+                        onRemoveSkillTag={onRemoveSkillTag}
+                      />
+                    </>
                   )}
                 </div>
-                {evt.description && height >= 56 && (
-                  <div className="text-[11px] text-muted-foreground leading-tight mt-0.5 line-clamp-2">
-                    {evt.description}
-                  </div>
-                )}
-                {height >= 48 && (
-                  <>
-                    <EventActionButtons
-                      evt={evt}
-                      onCheckin={handleCheckin}
-                      onDelete={onDelete}
-                      timerState={activeTimers.get(evt.id)}
-                      onStartTimer={onStartTimer}
-                      onStopTimer={onStopTimer}
-                      onPauseTimer={onPauseTimer}
-                      onResumeTimer={onResumeTimer}
-                    />
-                    <SkillTagSection
-                      activityId={evt.id}
-                      userSkills={userSkills}
-                      taggedSkillIds={skillTags[evt.id] ?? []}
-                      onTagSkill={onTagSkill}
-                      onRemoveSkillTag={onRemoveSkillTag}
-                    />
-                  </>
-                )}
-              </div>
-            )
-          })}
+              )
+            })
+          })()}
         </div>
       </div>
     </div>
