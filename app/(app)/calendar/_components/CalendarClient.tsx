@@ -125,15 +125,23 @@ const ROW_H = 56
  * Calcula columnas para eventos solapados en la cuadrícula de tiempo.
  * Devuelve { col, numCols } por evento para posicionamiento side-by-side.
  */
+/** Duración mínima (ms) usada en el layout — igual al mínimo visual (30 min) */
+const MIN_LAYOUT_MS = 30 * 60 * 1000
+
+/** End time efectivo para layout: mínimo 30 min para evitar bugs con eventos de duración 0 */
+function effectiveEndMs(evt: ICalendarEvent): number {
+  return Math.max(evt.end.getTime(), evt.start.getTime() + MIN_LAYOUT_MS)
+}
+
 function layoutEvents(events: ICalendarEvent[]): Map<string, { col: number; numCols: number }> {
   const result = new Map<string, { col: number; numCols: number }>()
   if (!events.length) return result
 
   const sorted = [...events].sort(
-    (a, b) => a.start.getTime() - b.start.getTime() || b.end.getTime() - a.end.getTime()
+    (a, b) => a.start.getTime() - b.start.getTime() || effectiveEndMs(b) - effectiveEndMs(a)
   )
 
-  // Asignación greedy de columnas: columns[c] = endTime del último evento en columna c
+  // Asignación greedy: columns[c] = endTime efectivo del último evento en columna c
   const columns: number[] = []
   const colOf = new Map<string, number>()
 
@@ -150,7 +158,7 @@ function layoutEvents(events: ICalendarEvent[]): Map<string, { col: number; numC
       placed = columns.length
       columns.push(0)
     }
-    columns[placed] = evt.end.getTime()
+    columns[placed] = effectiveEndMs(evt) // usar end efectivo para no colapsar duración 0
     colOf.set(evt.id, placed)
   }
 
@@ -158,8 +166,13 @@ function layoutEvents(events: ICalendarEvent[]): Map<string, { col: number; numC
   for (const evt of sorted) {
     const col = colOf.get(evt.id)!
     let numCols = col + 1
+    const evtEndMs = effectiveEndMs(evt)
     for (const other of sorted) {
-      if (other.id !== evt.id && other.start < evt.end && other.end > evt.start) {
+      if (
+        other.id !== evt.id &&
+        other.start.getTime() < evtEndMs &&
+        effectiveEndMs(other) > evt.start.getTime()
+      ) {
         numCols = Math.max(numCols, colOf.get(other.id)! + 1)
       }
     }
@@ -963,17 +976,20 @@ function DayView({
                     onEventClick(evt)
                   }}
                 >
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium truncate">{evt.title}</span>
-                    {formattedTime && (
-                      <span
-                        className={`text-[10px] font-mono shrink-0 ${isRunningTimer ? 'text-primary animate-pulse' : 'text-muted-foreground'}`}
-                      >
-                        ⏱ {formattedTime}
-                      </span>
-                    )}
+                  <div className="leading-tight">
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-medium truncate text-sm">{evt.title}</span>
+                      {isRunningTimer && formattedTime && (
+                        <span className="text-[10px] font-mono shrink-0 text-primary animate-pulse">
+                          ⏱ {formattedTime}
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-[11px] opacity-75 mt-0.5">
+                      {format(evt.start, 'HH:mm')} – {format(evt.end, 'HH:mm')}
+                    </div>
                   </div>
-                  {evt.description && height >= 56 && (
+                  {evt.description && height >= 72 && (
                     <div className="text-[11px] text-muted-foreground leading-tight mt-0.5 line-clamp-2">
                       {evt.description}
                     </div>
