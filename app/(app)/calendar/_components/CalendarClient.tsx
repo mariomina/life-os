@@ -123,25 +123,24 @@ const ROW_H = 56
 
 /**
  * Calcula columnas para eventos solapados en la cuadrícula de tiempo.
- * Devuelve { col, numCols } por evento para posicionamiento side-by-side.
+ * Solo eventos con rangos de tiempo que se INTERSECTAN ESTRICTAMENTE se colocan
+ * en columnas separadas. Eventos secuenciales (end A == start B) se apilan.
  */
-/** Duración mínima (ms) usada en el layout — igual al mínimo visual (30 min) */
-const MIN_LAYOUT_MS = 30 * 60 * 1000
-
-/** End time efectivo para layout: mínimo 30 min para evitar bugs con eventos de duración 0 */
-function effectiveEndMs(evt: ICalendarEvent): number {
-  return Math.max(evt.end.getTime(), evt.start.getTime() + MIN_LAYOUT_MS)
-}
-
 function layoutEvents(events: ICalendarEvent[]): Map<string, { col: number; numCols: number }> {
   const result = new Map<string, { col: number; numCols: number }>()
   if (!events.length) return result
 
   const sorted = [...events].sort(
-    (a, b) => a.start.getTime() - b.start.getTime() || effectiveEndMs(b) - effectiveEndMs(a)
+    (a, b) => a.start.getTime() - b.start.getTime() || b.end.getTime() - a.end.getTime()
   )
 
-  // Asignación greedy: columns[c] = endTime efectivo del último evento en columna c
+  // Solapamiento real: intersección estricta. end A == start B → secuencial, no se solapa.
+  function overlaps(a: ICalendarEvent, b: ICalendarEvent): boolean {
+    return a.start.getTime() < b.end.getTime() && b.start.getTime() < a.end.getTime()
+  }
+
+  // Greedy: columns[c] = end real del último evento en columna c.
+  // Eventos secuenciales (end<=start) reutilizan la columna y se apilan verticalmente.
   const columns: number[] = []
   const colOf = new Map<string, number>()
 
@@ -158,21 +157,16 @@ function layoutEvents(events: ICalendarEvent[]): Map<string, { col: number; numC
       placed = columns.length
       columns.push(0)
     }
-    columns[placed] = effectiveEndMs(evt) // usar end efectivo para no colapsar duración 0
+    columns[placed] = evt.end.getTime()
     colOf.set(evt.id, placed)
   }
 
-  // numCols = máximo (col+1) entre todos los eventos que se solapan con éste
+  // numCols = máximo (col+1) entre los eventos que se solapan realmente con éste
   for (const evt of sorted) {
     const col = colOf.get(evt.id)!
     let numCols = col + 1
-    const evtEndMs = effectiveEndMs(evt)
     for (const other of sorted) {
-      if (
-        other.id !== evt.id &&
-        other.start.getTime() < evtEndMs &&
-        effectiveEndMs(other) > evt.start.getTime()
-      ) {
+      if (other.id !== evt.id && overlaps(evt, other)) {
         numCols = Math.max(numCols, colOf.get(other.id)! + 1)
       }
     }
