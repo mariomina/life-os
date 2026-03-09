@@ -625,12 +625,9 @@ function WeekView({
               >
                 {dayEvents.map((evt) => {
                   const startH = evt.start.getHours() + evt.start.getMinutes() / 60
-                  const durationH = Math.max(
-                    0.25,
-                    (evt.end.getTime() - evt.start.getTime()) / 3600000
-                  )
+                  const durationH = (evt.end.getTime() - evt.start.getTime()) / 3600000
                   const top = startH * ROW_H
-                  const height = Math.min(durationH, 24 - startH) * ROW_H
+                  const height = Math.max(14, Math.min(durationH, 24 - startH) * ROW_H)
                   const hexStyle = getEventColorStyle(evt.calendarColor)
                   return (
                     <div
@@ -922,9 +919,11 @@ function DayView({
             const layout = layoutEvents(dayEvents)
             return dayEvents.map((evt) => {
               const startH = evt.start.getHours() + evt.start.getMinutes() / 60
-              const durationH = Math.max(0.5, (evt.end.getTime() - evt.start.getTime()) / 3600000)
+              const durationH = (evt.end.getTime() - evt.start.getTime()) / 3600000
               const top = startH * ROW_H
-              const height = Math.min(durationH, 24 - startH) * ROW_H
+              // Mínimo 20px (≈21 min visual) — suficiente para mostrar el título
+              // Sin el Math.max(0.5h) que causaba overlap visual con eventos secuenciales
+              const height = Math.max(20, Math.min(durationH, 24 - startH) * ROW_H)
 
               const { col, numCols } = layout.get(evt.id) ?? { col: 0, numCols: 1 }
               const pct = 100 / numCols
