@@ -9,7 +9,7 @@
 // Story 5.2: fix timezone (getUTCHours→getHours), Time Budget panel, action buttons.
 // Story 5.8: time tracking — start/stop/pause/resume, time totals in DayView.
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   format,
@@ -497,6 +497,7 @@ function WeekView({
   holidays?: Holiday[]
 }) {
   const [dragOver, setDragOver] = useState<{ dayKey: string; hour: number } | null>(null)
+  const weekJustDropped = useRef(false)
   const weekStart = startOfWeek(currentDate, { weekStartsOn: 1 })
   const weekDays = eachDayOfInterval({
     start: weekStart,
@@ -596,13 +597,21 @@ function WeekView({
                 <div
                   key={day.toISOString()}
                   className={`border-l border-border/50 cursor-pointer transition-colors ${isDragTarget ? 'bg-primary/15' : 'hover:bg-primary/5'}`}
-                  onClick={() => onSlotClick(day, hour.getHours())}
+                  onClick={() => {
+                    if (weekJustDropped.current) return
+                    onSlotClick(day, hour.getHours())
+                  }}
                   onDragOver={(e) => {
                     e.preventDefault()
                     setDragOver({ dayKey: day.toISOString(), hour: hour.getHours() })
                   }}
                   onDrop={(e) => {
                     e.preventDefault()
+                    e.stopPropagation()
+                    weekJustDropped.current = true
+                    setTimeout(() => {
+                      weekJustDropped.current = false
+                    }, 300)
                     const eventId = e.dataTransfer.getData('text/plain')
                     if (eventId) onEventDrop(eventId, day, hour.getHours())
                     setDragOver(null)
@@ -843,6 +852,7 @@ function DayView({
 }) {
   const router = useRouter()
   const [dragOverHour, setDragOverHour] = useState<number | null>(null)
+  const dayJustDropped = useRef(false)
   const hours = getDayHourSlots(currentDate, 0, 24)
   const allDayForDay = getEventsForDay(events, currentDate).filter((e) => e.isAllDay)
   const dayEvents = getEventsForDay(events, currentDate).filter((e) => !e.isAllDay)
@@ -898,13 +908,21 @@ function DayView({
             </div>
             <div
               className={`flex-1 border-l border-border/50 cursor-pointer transition-colors ${dragOverHour === hour.getHours() ? 'bg-primary/15' : 'hover:bg-primary/5'}`}
-              onClick={() => onSlotClick(currentDate, hour.getHours())}
+              onClick={() => {
+                if (dayJustDropped.current) return
+                onSlotClick(currentDate, hour.getHours())
+              }}
               onDragOver={(e) => {
                 e.preventDefault()
                 setDragOverHour(hour.getHours())
               }}
               onDrop={(e) => {
                 e.preventDefault()
+                e.stopPropagation()
+                dayJustDropped.current = true
+                setTimeout(() => {
+                  dayJustDropped.current = false
+                }, 300)
                 const eventId = e.dataTransfer.getData('text/plain')
                 if (eventId) onEventDrop(eventId, currentDate, hour.getHours())
                 setDragOverHour(null)
@@ -921,9 +939,9 @@ function DayView({
               const startH = evt.start.getHours() + evt.start.getMinutes() / 60
               const durationH = (evt.end.getTime() - evt.start.getTime()) / 3600000
               const top = startH * ROW_H
-              // Mínimo 20px (≈21 min visual) — suficiente para mostrar el título
-              // Sin el Math.max(0.5h) que causaba overlap visual con eventos secuenciales
-              const height = Math.max(20, Math.min(durationH, 24 - startH) * ROW_H)
+              // Mínimo 14px (= 1 línea de texto) — eventos de 15min terminan exactamente
+              // donde empieza el siguiente, sin overlap visual
+              const height = Math.max(14, Math.min(durationH, 24 - startH) * ROW_H)
 
               const { col, numCols } = layout.get(evt.id) ?? { col: 0, numCols: 1 }
               const pct = 100 / numCols
