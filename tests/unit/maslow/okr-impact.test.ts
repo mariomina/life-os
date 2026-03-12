@@ -18,6 +18,7 @@ function makeArea(
     group: maslowLevel <= 4 ? 'd_needs' : 'b_needs',
     name,
     defaultName: name,
+    slug: '',
     weightMultiplier: String(MASLOW_WEIGHTS[maslowLevel as keyof typeof MASLOW_WEIGHTS]),
     currentScore,
     lastActivityAt: null,

@@ -12,6 +12,7 @@ function makeArea(overrides: Partial<Area> & { maslowLevel: number; name: string
     group: maslowLevel <= 4 ? 'd_needs' : 'b_needs',
     name,
     defaultName: name,
+    slug: '',
     weightMultiplier: '1.0',
     currentScore: 70,
     lastActivityAt,

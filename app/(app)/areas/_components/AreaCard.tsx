@@ -3,8 +3,10 @@
 // app/(app)/areas/_components/AreaCard.tsx
 // Tarjeta de área Maslow con score circular SVG + top 3 sub-áreas.
 // Story 11.6 — UI /areas GLSHS Chart + Grid de Cards con Score Circular.
+// Story 11.7 — Link a /areas/[slug] para vista de detalle.
 
 import { useEffect, useRef, useState } from 'react'
+import Link from 'next/link'
 import { RefreshCw, ClipboardList, CalendarDays } from 'lucide-react'
 import type { AreaWithSubareas } from '@/lib/db/queries/areas'
 
@@ -127,10 +129,12 @@ export function AreaCard({ area, previousScore, hasDecayAlert = false }: AreaCar
   const border = borderClass(score)
   const icon = AREA_ICONS[area.maslowLevel] ?? '⭕'
   const isVeryLow = score < 40
+  const href = `/areas/${encodeURIComponent(area.slug || area.defaultName)}`
 
   return (
-    <div
-      className={`relative rounded-2xl border-2 bg-card p-4 space-y-3 shadow-[0_1px_3px_rgb(0_0_0/0.06)] transition-colors ${border}`}
+    <Link
+      href={href}
+      className={`relative rounded-2xl border-2 bg-card p-4 space-y-3 shadow-[0_1px_3px_rgb(0_0_0/0.06)] transition-colors hover:bg-accent/30 block ${border}`}
     >
       {/* Badge ⚠ Atención */}
       {isVeryLow && (
@@ -192,7 +196,7 @@ export function AreaCard({ area, previousScore, hasDecayAlert = false }: AreaCar
         {area.subareaCount} sub-área{area.subareaCount !== 1 ? 's' : ''}
         {area.topSubareas.length > 0 && ` · ${area.topSubareas.length} mostradas`}
       </p>
-    </div>
+    </Link>
   )
 }
 

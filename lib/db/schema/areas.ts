@@ -1,4 +1,13 @@
-import { pgTable, uuid, text, integer, numeric, timestamp, index } from 'drizzle-orm/pg-core'
+import {
+  pgTable,
+  uuid,
+  text,
+  integer,
+  numeric,
+  timestamp,
+  index,
+  uniqueIndex,
+} from 'drizzle-orm/pg-core'
 
 /**
  * 8 Maslow Areas per user (semi-static — seeded on onboarding).
@@ -22,6 +31,8 @@ export const areas = pgTable(
     name: text('name').notNull(),
     /** Default names: Fisiológica, Seguridad, Conexión Social, Estima, Cognitiva, Estética, Autorrealización, Autotrascendencia */
     defaultName: text('default_name').notNull(),
+    /** URL-safe slug for routing. Example: 'fisiologica', 'seguridad'. Seeded by migration 20260312. */
+    slug: text('slug').notNull().default(''),
     /** Maslow weight multiplier: 2.0, 1.5, 1.2, or 1.0 */
     weightMultiplier: numeric('weight_multiplier', { precision: 3, scale: 1 }).notNull(),
     /** Cached current score (0-100), recalculated on each checkin/activity */
@@ -41,6 +52,8 @@ export const areas = pgTable(
     userIdx: index('areas_user_id_idx').on(table.userId),
     /** Maslow scoring: sort areas by level within a user */
     userMaslowIdx: index('areas_user_maslow_idx').on(table.userId, table.maslowLevel),
+    /** Slug-based routing: /areas/[slug] */
+    userSlugIdx: uniqueIndex('areas_user_slug_idx').on(table.userId, table.slug),
   })
 )
 

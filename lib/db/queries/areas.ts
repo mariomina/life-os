@@ -1,6 +1,6 @@
 import { eq, asc, and, gte, desc } from 'drizzle-orm'
 import { db, assertDatabaseUrl } from '@/lib/db/client'
-import { areas, areaSubareas } from '@/lib/db/schema'
+import { areas, areaSubareas, habits, stepsActivities, projects, okrs } from '@/lib/db/schema'
 import { areaScores } from '@/lib/db/schema/area-scores'
 import { MASLOW_WEIGHTS, MASLOW_TOTAL_WEIGHT, type MaslowLevel } from '@/lib/utils/maslow-weights'
 import type { Area } from '@/lib/db/schema/areas'
@@ -138,4 +138,190 @@ export async function getGLSHSHistory(userId: string, days = 30): Promise<GLSHSP
   }
 
   return result
+}
+
+// ─── Story 11.7 — Area Detail with Sources ────────────────────────────────────
+
+export interface AreaSource {
+  id: string
+  type: 'habit' | 'activity' | 'project'
+  title: string
+  /** Habit: current streak days */
+  streak?: number
+  /** Habit: last completed date (YYYY-MM-DD) */
+  lastCompletedAt?: string | null
+  /** Activity: when it was completed */
+  completedAt?: Date | null
+  /** Project: KR progress 0-100 */
+  progress?: number
+  /** Direct link to the entity in its native view */
+  href: string
+}
+
+export interface SubareaDetail extends AreaSubarea {
+  sources: AreaSource[]
+}
+
+export interface AreaDetailWithSources extends Area {
+  subareas: SubareaDetail[]
+  /** Active projects linked to this area (proxy — projects have no subareaId) */
+  areaProjects: AreaSource[]
+  /** Daily score history for the area chart */
+  scoreHistory: GLSHSPoint[]
+}
+
+/**
+ * Returns full area detail with sub-areas and all sources (habits, activities, projects)
+ * that cover each sub-area or the parent area.
+ * Used by /areas/[slug] detail page.
+ */
+export async function getAreaDetailWithSources(
+  userId: string,
+  slug: string
+): Promise<AreaDetailWithSources | null> {
+  assertDatabaseUrl()
+
+  // Step 1: Find area by slug
+  const [area] = await db
+    .select()
+    .from(areas)
+    .where(and(eq(areas.userId, userId), eq(areas.slug, slug)))
+    .limit(1)
+
+  if (!area) return null
+
+  const cutoff = new Date()
+  cutoff.setDate(cutoff.getDate() - 30)
+  const cutoffScore = new Date()
+  cutoffScore.setDate(cutoffScore.getDate() - 365)
+  const cutoffScoreStr = cutoffScore.toISOString().slice(0, 10)
+
+  // Step 2: Parallel queries for all sources
+  const [subareas, habitRows, activityRows, projectRows, scoreRows] = await Promise.all([
+    // All active sub-areas ordered by display order
+    db
+      .select()
+      .from(areaSubareas)
+      .where(and(eq(areaSubareas.areaId, area.id), eq(areaSubareas.isActive, true)))
+      .orderBy(asc(areaSubareas.displayOrder)),
+
+    // Active habits for this area
+    db
+      .select({
+        id: habits.id,
+        subareaId: habits.subareaId,
+        title: habits.title,
+        streakCurrent: habits.streakCurrent,
+        lastCompletedAt: habits.lastCompletedAt,
+      })
+      .from(habits)
+      .where(and(eq(habits.userId, userId), eq(habits.areaId, area.id), eq(habits.isActive, true))),
+
+    // Completed activities in last 30d for this area
+    db
+      .select({
+        id: stepsActivities.id,
+        subareaId: stepsActivities.subareaId,
+        title: stepsActivities.title,
+        completedAt: stepsActivities.completedAt,
+      })
+      .from(stepsActivities)
+      .where(
+        and(
+          eq(stepsActivities.userId, userId),
+          eq(stepsActivities.areaId, area.id),
+          eq(stepsActivities.status, 'completed'),
+          gte(stepsActivities.completedAt, cutoff)
+        )
+      )
+      .orderBy(desc(stepsActivities.completedAt))
+      .limit(50),
+
+    // Active projects linked to this area (via areaId or linked OKR's areaId)
+    db
+      .select({
+        id: projects.id,
+        title: projects.title,
+        progress: okrs.progress,
+      })
+      .from(projects)
+      .leftJoin(okrs, eq(projects.okrId, okrs.id))
+      .where(
+        and(
+          eq(projects.userId, userId),
+          eq(projects.areaId, area.id),
+          eq(projects.status, 'active')
+        )
+      )
+      .limit(10),
+
+    // Area score history for chart (last 365 days)
+    db
+      .select({ score: areaScores.score, scoredAt: areaScores.scoredAt })
+      .from(areaScores)
+      .where(and(eq(areaScores.areaId, area.id), gte(areaScores.scoredAt, cutoffScoreStr)))
+      .orderBy(asc(areaScores.scoredAt)),
+  ])
+
+  // Step 3: Group habits and activities by subareaId
+  const habitsBySubarea = new Map<string, typeof habitRows>()
+  for (const h of habitRows) {
+    const sid = h.subareaId ?? '__area__'
+    habitsBySubarea.set(sid, [...(habitsBySubarea.get(sid) ?? []), h])
+  }
+
+  const activitiesBySubarea = new Map<string, typeof activityRows>()
+  for (const a of activityRows) {
+    const sid = a.subareaId ?? '__area__'
+    activitiesBySubarea.set(sid, [...(activitiesBySubarea.get(sid) ?? []), a])
+  }
+
+  // Step 4: Build SubareaDetail list
+  const subareaDetails: SubareaDetail[] = subareas.map((sub) => {
+    const subHabits = habitsBySubarea.get(sub.id) ?? []
+    const subActivities = activitiesBySubarea.get(sub.id) ?? []
+
+    const sources: AreaSource[] = [
+      ...subHabits.map(
+        (h): AreaSource => ({
+          id: h.id,
+          type: 'habit',
+          title: h.title,
+          streak: h.streakCurrent,
+          lastCompletedAt: h.lastCompletedAt,
+          href: '/habits',
+        })
+      ),
+      ...subActivities.map(
+        (a): AreaSource => ({
+          id: a.id,
+          type: 'activity',
+          title: a.title,
+          completedAt: a.completedAt,
+          href: '/calendar',
+        })
+      ),
+    ]
+
+    return { ...sub, sources }
+  })
+
+  // Step 5: Area-level projects (proxy — no subareaId)
+  const areaProjects: AreaSource[] = projectRows.map(
+    (p): AreaSource => ({
+      id: p.id,
+      type: 'project',
+      title: p.title,
+      progress: p.progress ?? 0,
+      href: `/projects/${p.id}`,
+    })
+  )
+
+  // Step 6: Score history
+  const scoreHistory: GLSHSPoint[] = scoreRows.map((r) => ({
+    date: r.scoredAt,
+    score: r.score,
+  }))
+
+  return { ...area, subareas: subareaDetails, areaProjects, scoreHistory }
 }
