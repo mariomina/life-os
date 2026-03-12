@@ -16,6 +16,26 @@ export function calculateAreaScore(rawScore: number, maslowLevel: MaslowLevel): 
 }
 
 /**
+ * Calcula el score de un área como promedio ponderado de sus sub-áreas.
+ * Cada sub-área contribuye con su internalWeight relativo al total.
+ *
+ * @param subareas - Array de sub-áreas activas con su currentScore e internalWeight
+ * @returns Score del área (0-100), 0 si no hay sub-áreas
+ * [Source: brief#4-subareas — Story 11.3]
+ */
+export function calculateAreaScoreFromSubareas(
+  subareas: Array<{ currentScore: number; internalWeight: number }>
+): number {
+  const totalWeight = subareas.reduce((sum, s) => sum + Number(s.internalWeight), 0)
+  if (totalWeight === 0) return 0
+  const weightedSum = subareas.reduce(
+    (sum, s) => sum + s.currentScore * Number(s.internalWeight),
+    0
+  )
+  return Math.round((weightedSum / totalWeight) * 100) / 100
+}
+
+/**
  * Calcula el Life System Health Score global ponderado.
  * Fórmula: Σ(score_área × multiplicador_nivel) / MASLOW_TOTAL_WEIGHT
  * @param areaScores - Mapa de nivel Maslow → score del área (0-100)
