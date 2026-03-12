@@ -10,9 +10,11 @@ import { revalidatePath } from 'next/cache'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { db, assertDatabaseUrl } from '@/lib/db/client'
 import { timeEntries } from '@/lib/db/schema/time-entries'
+import { stepsActivities } from '@/lib/db/schema/steps-activities'
 import { stepSkillTags } from '@/lib/db/schema/step-skill-tags'
 import { skills } from '@/lib/db/schema/skills'
 import { computeSkillLevel } from '@/features/skills/level'
+import { recalculateSubareaScore, recalculateAreaScore } from '@/lib/scoring/area-calculator'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -135,6 +137,18 @@ export async function stopTimer(entryId: string): Promise<TimerActionResult> {
             .where(eq(skills.id, s.id))
         }
       }
+    }
+
+    // Story 11.4 — Trigger: recalcular score de sub-área al completar timer
+    const [activity] = await db
+      .select({ subareaId: stepsActivities.subareaId, areaId: stepsActivities.areaId })
+      .from(stepsActivities)
+      .where(eq(stepsActivities.id, entry.stepActivityId))
+      .limit(1)
+
+    if (activity?.subareaId && activity.areaId) {
+      await recalculateSubareaScore(activity.subareaId, userId, new Date())
+      await recalculateAreaScore(activity.areaId, userId)
     }
 
     revalidatePath('/calendar')

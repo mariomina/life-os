@@ -12,6 +12,7 @@ import { stepsActivities } from '@/lib/db/schema/steps-activities'
 import { checkinResponses } from '@/lib/db/schema/checkin-responses'
 import { habits } from '@/lib/db/schema/habits'
 import { calculateStreak } from '@/lib/habits/streak-utils'
+import { recalculateSubareaScore, recalculateAreaScore } from '@/lib/scoring/area-calculator'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -129,12 +130,14 @@ export async function confirmActivity(
     const userId = await getAuthenticatedUserId()
     const checkinDate = getYesterdayStr()
 
-    // 1. Verify ownership + load habitId
+    // 1. Verify ownership + load habitId, subareaId, areaId
     const activityRows = await db
       .select({
         id: stepsActivities.id,
         userId: stepsActivities.userId,
         habitId: stepsActivities.habitId,
+        subareaId: stepsActivities.subareaId,
+        areaId: stepsActivities.areaId,
       })
       .from(stepsActivities)
       .where(and(eq(stepsActivities.id, activityId), eq(stepsActivities.userId, userId)))
@@ -184,6 +187,12 @@ export async function confirmActivity(
       await recalculateHabitStreak(activity.habitId, userId, status, checkinDate)
     }
 
+    // Story 11.4 — Trigger: recalcular score de sub-área al completar actividad
+    if (status === 'completed' && activity.subareaId && activity.areaId) {
+      await recalculateSubareaScore(activity.subareaId, userId, new Date())
+      await recalculateAreaScore(activity.areaId, userId)
+    }
+
     revalidatePath('/')
     return { error: null }
   } catch (err) {
@@ -211,12 +220,20 @@ export async function bulkConfirmHabits(activityIds: string[]): Promise<ActionRe
 
     // Load and verify ownership of all activities
     const activityRows = await db
-      .select({ id: stepsActivities.id, habitId: stepsActivities.habitId })
+      .select({
+        id: stepsActivities.id,
+        habitId: stepsActivities.habitId,
+        subareaId: stepsActivities.subareaId,
+        areaId: stepsActivities.areaId,
+      })
       .from(stepsActivities)
       .where(eq(stepsActivities.userId, userId))
 
     const ownedIds = new Set(activityRows.map((r) => r.id))
     const habitIdMap = new Map(activityRows.map((r) => [r.id, r.habitId]))
+    const subareaMap = new Map(
+      activityRows.map((r) => [r.id, { subareaId: r.subareaId, areaId: r.areaId }])
+    )
 
     const validIds = activityIds.filter((id) => ownedIds.has(id))
     if (validIds.length === 0) return { error: 'No se encontraron actividades válidas' }
@@ -253,6 +270,22 @@ export async function bulkConfirmHabits(activityIds: string[]): Promise<ActionRe
     await Promise.all(
       Array.from(uniqueHabitIds).map((habitId) =>
         recalculateHabitStreak(habitId, userId, 'completed', checkinDate)
+      )
+    )
+
+    // Story 11.4 — Trigger: recalcular score de sub-áreas únicas afectadas
+    const uniqueSubareas = new Map<string, string>() // subareaId → areaId
+    for (const id of validIds) {
+      const info = subareaMap.get(id)
+      if (info?.subareaId && info.areaId) {
+        uniqueSubareas.set(info.subareaId, info.areaId)
+      }
+    }
+    await Promise.all(
+      Array.from(uniqueSubareas.entries()).map(([subareaId, areaId]) =>
+        recalculateSubareaScore(subareaId, userId, new Date()).then(() =>
+          recalculateAreaScore(areaId, userId)
+        )
       )
     )
 

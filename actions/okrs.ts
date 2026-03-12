@@ -10,6 +10,7 @@ import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { db, assertDatabaseUrl } from '@/lib/db/client'
 import { okrs } from '@/lib/db/schema/okrs'
 import { stepsActivities } from '@/lib/db/schema/steps-activities'
+import { recalculateAreaScore } from '@/lib/scoring/area-calculator'
 import {
   countActiveAnnualOKRs,
   getVision,
@@ -298,6 +299,11 @@ export async function recalculateKRProgress(krId: string): Promise<ActionResult>
 
     if (kr.parentId) {
       await updateAnnualOKRProgress(userId, kr.parentId)
+    }
+
+    // Story 11.4 — Trigger: recalcular score del área vinculada al KR
+    if (kr.areaId) {
+      await recalculateAreaScore(kr.areaId, userId)
     }
 
     revalidatePath('/okrs')
