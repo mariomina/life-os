@@ -65,8 +65,8 @@ export function HabitForm({
       setSubareaId('')
       return
     }
-    import('@/lib/db/queries/areas').then(({ getSubareasByArea }) => {
-      getSubareasByArea(areaId)
+    import('@/actions/areas').then(({ getSubareasForArea }) => {
+      getSubareasForArea(areaId)
         .then(setSubareas)
         .catch(() => setSubareas([]))
     })

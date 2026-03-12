@@ -210,8 +210,8 @@ export function NewActivityModal({
       setSelectedSubareaId('')
       return
     }
-    import('@/lib/db/queries/areas').then(({ getSubareasByArea }) => {
-      getSubareasByArea(selectedAreaId)
+    import('@/actions/areas').then(({ getSubareasForArea }) => {
+      getSubareasForArea(selectedAreaId)
         .then(setSubareas)
         .catch(() => setSubareas([]))
     })
