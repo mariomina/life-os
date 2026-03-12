@@ -1,91 +1,34 @@
+// app/(app)/areas/page.tsx
+// Server Component — Vista analítica de áreas Maslow.
+// Story 11.6 — UI /areas GLSHS Chart + Grid de Cards con Score Circular.
+//
+// Modelo mental: "Areas es un espejo analítico — no captura datos, los lee."
+// No hay formularios, no hay botones de crear. Solo visualización.
+
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
-import { getUserAreas } from '@/lib/db/queries/areas'
+import { getAreasWithSubareas, getGLSHSHistory } from '@/lib/db/queries/areas'
 import { getRecentAreaScores } from '@/lib/db/queries/area-scores'
-import { getTimeInvestedByArea } from '@/lib/db/queries/time-entries'
-import { calculateGlobalScore } from '@/features/maslow/scoring'
-import { calculateTrend, scoreColorClass, scoreBgClass } from '@/lib/utils/trend'
-import { formatTimeInvested, formatLastActivity } from '@/lib/utils/time-format'
-import { getAlerts } from '@/features/maslow/alerts'
-import { AlertBanner } from '@/components/shared/AlertBanner'
-import type { MaslowLevel } from '@/lib/utils/maslow-weights'
-import type { Area } from '@/lib/db/schema/areas'
+import { GLSHSChart } from './_components/GLSHSChart'
+import { AreaCard } from './_components/AreaCard'
+import type { AreaWithSubareas } from '@/lib/db/queries/areas'
 import type { AreaScore } from '@/lib/db/schema/area-scores'
 
-const AREA_ICONS: Record<number, string> = {
-  1: '🧬',
-  2: '🏠',
-  3: '👥',
-  4: '🏆',
-  5: '📚',
-  6: '🎨',
-  7: '🌟',
-  8: '🌍',
-}
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function buildTrendMap(recentScores: AreaScore[]): Record<string, number[]> {
-  const map: Record<string, number[]> = {}
-  for (const s of recentScores) {
-    if (!map[s.areaId]) map[s.areaId] = []
-    map[s.areaId].push(s.score)
+/** Builds a map: areaId → score 7 days ago (for trend delta) */
+function buildPreviousScoreMap(recentScores: AreaScore[]): Record<string, number> {
+  // recentScores ordered desc by scoredAt — oldest available = 7 days ago proxy
+  const map: Record<string, number> = {}
+  // Process in reverse (oldest first) so latest entry wins
+  for (const s of [...recentScores].reverse()) {
+    map[s.areaId] = s.score
   }
   return map
 }
 
-function buildScoreMap(userAreas: Area[]): Record<MaslowLevel, number> {
-  const map = {} as Record<MaslowLevel, number>
-  for (const area of userAreas) {
-    map[area.maslowLevel as MaslowLevel] = area.currentScore
-  }
-  return map
-}
-
-interface AreaCardProps {
-  area: Area
-  trend: '↑' | '↓' | '→'
-  timeInvestedSeconds: number
-}
-
-function AreaCard({ area, trend, timeInvestedSeconds }: AreaCardProps) {
-  const score = area.currentScore
-  const colorClass = scoreColorClass(score)
-  const bgClass = scoreBgClass(score)
-  const icon = AREA_ICONS[area.maslowLevel] ?? '⭕'
-
-  const trendColor =
-    trend === '↑' ? 'text-green-500' : trend === '↓' ? 'text-red-500' : 'text-muted-foreground'
-
-  return (
-    <div className="rounded-2xl border bg-card p-4 space-y-3 shadow-[0_1px_3px_rgb(0_0_0/0.06)]">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <span className="text-2xl">{icon}</span>
-          <div>
-            <p className="text-sm font-medium text-foreground">{area.name}</p>
-            <p className="text-xs text-muted-foreground">Nivel {area.maslowLevel}</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-1">
-          <span className={`text-lg font-bold ${colorClass}`}>{score}%</span>
-          <span className={`text-base ${trendColor}`}>{trend}</span>
-        </div>
-      </div>
-
-      <div className="w-full bg-muted rounded-full h-2">
-        <div
-          className={`h-2 rounded-full transition-all ${bgClass}`}
-          style={{ width: `${score}%` }}
-        />
-      </div>
-
-      <div className="flex items-center justify-between text-xs text-muted-foreground">
-        <span>⏱ {formatTimeInvested(timeInvestedSeconds)}</span>
-        <span>{formatLastActivity(area.lastActivityAt)}</span>
-      </div>
-    </div>
-  )
-}
+// ─── Empty State ──────────────────────────────────────────────────────────────
 
 function EmptyState() {
   return (
@@ -105,83 +48,63 @@ function EmptyState() {
   )
 }
 
+// ─── Page ─────────────────────────────────────────────────────────────────────
+
 export default async function AreasPage() {
   const supabase = await createSupabaseServerClient()
   const {
     data: { user },
   } = await supabase.auth.getUser()
 
-  if (!user) {
-    redirect('/login')
-  }
+  if (!user) redirect('/login')
 
-  const [userAreas, recentScores, timeMap] = await Promise.all([
-    getUserAreas(user.id),
+  const [areasWithSubs, glshsHistory, recentScores] = await Promise.all([
+    getAreasWithSubareas(user.id),
+    getGLSHSHistory(user.id, 90),
     getRecentAreaScores(user.id, 7),
-    getTimeInvestedByArea(user.id),
   ])
 
-  if (userAreas.length === 0) {
-    return <EmptyState />
-  }
+  if (areasWithSubs.length === 0) return <EmptyState />
 
-  const trendMap = buildTrendMap(recentScores)
-  const scoreMap = buildScoreMap(userAreas)
-  const globalScore = Math.round(calculateGlobalScore(scoreMap))
-  const alerts = getAlerts(userAreas, timeMap)
+  const previousScoreMap = buildPreviousScoreMap(recentScores)
 
-  const dNeeds = userAreas.filter((a) => a.group === 'd_needs')
-  const bNeeds = userAreas.filter((a) => a.group === 'b_needs')
-
-  const globalColorClass = scoreColorClass(globalScore)
+  // Split by Maslow group
+  const dNeeds = areasWithSubs.filter((a: AreaWithSubareas) => a.group === 'd_needs')
+  const bNeeds = areasWithSubs.filter((a: AreaWithSubareas) => a.group === 'b_needs')
 
   return (
-    <div className="space-y-8">
-      {/* Alertas activas */}
-      <AlertBanner alerts={alerts} />
+    <div className="space-y-6">
+      {/* Zona 1 — GLSHS Chart */}
+      <GLSHSChart data={glshsHistory} />
 
-      {/* Header — Life System Health Score */}
-      <section className="rounded-xl border bg-card p-6 text-center space-y-2">
-        <p className="text-sm font-medium text-muted-foreground uppercase tracking-wide">
-          Life System Health Score
-        </p>
-        <p className={`text-6xl font-bold ${globalColorClass}`}>{globalScore}</p>
-        <p className="text-xs text-muted-foreground">sobre 100 — score ponderado Maslow</p>
-      </section>
+      {/* Zona 2 — Grid de Cards */}
+      <section className="space-y-4">
+        {/* D-Needs */}
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-semibold text-foreground">D-Needs</span>
+            <span className="text-xs text-muted-foreground">
+              Necesidades de Deficiencia (L1–L4)
+            </span>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {dNeeds.map((area: AreaWithSubareas) => (
+              <AreaCard key={area.id} area={area} previousScore={previousScoreMap[area.id]} />
+            ))}
+          </div>
+        </div>
 
-      {/* D-Needs */}
-      <section className="space-y-3">
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-semibold text-foreground">D-Needs</span>
-          <span className="text-xs text-muted-foreground">Necesidades de Deficiencia (1-4)</span>
-        </div>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          {dNeeds.map((area) => {
-            const scores = trendMap[area.id] ?? []
-            const trend = calculateTrend(scores)
-            const timeSeconds = timeMap[area.id] ?? 0
-            return (
-              <AreaCard key={area.id} area={area} trend={trend} timeInvestedSeconds={timeSeconds} />
-            )
-          })}
-        </div>
-      </section>
-
-      {/* B-Needs */}
-      <section className="space-y-3">
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-semibold text-foreground">B-Needs</span>
-          <span className="text-xs text-muted-foreground">Necesidades de Ser (5-8)</span>
-        </div>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          {bNeeds.map((area) => {
-            const scores = trendMap[area.id] ?? []
-            const trend = calculateTrend(scores)
-            const timeSeconds = timeMap[area.id] ?? 0
-            return (
-              <AreaCard key={area.id} area={area} trend={trend} timeInvestedSeconds={timeSeconds} />
-            )
-          })}
+        {/* B-Needs */}
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-semibold text-foreground">B-Needs</span>
+            <span className="text-xs text-muted-foreground">Necesidades de Ser (L5–L8)</span>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {bNeeds.map((area: AreaWithSubareas) => (
+              <AreaCard key={area.id} area={area} previousScore={previousScoreMap[area.id]} />
+            ))}
+          </div>
         </div>
       </section>
     </div>
