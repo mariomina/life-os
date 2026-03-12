@@ -8,10 +8,13 @@
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
-import { getAreasWithSubareas, getGLSHSHistory } from '@/lib/db/queries/areas'
+import { getAreasWithSubareas, getGLSHSHistory, getAlertEngineData } from '@/lib/db/queries/areas'
 import { getRecentAreaScores } from '@/lib/db/queries/area-scores'
+import { getSubareasByUser } from '@/lib/db/queries/areas'
+import { evaluateAlertRules } from '@/features/maslow/alert-engine'
 import { GLSHSChart } from './_components/GLSHSChart'
 import { AreaCard } from './_components/AreaCard'
+import { MaslowAlertBanner } from '@/components/shared/MaslowAlertBanner'
 import type { AreaWithSubareas } from '@/lib/db/queries/areas'
 import type { AreaScore } from '@/lib/db/schema/area-scores'
 
@@ -58,15 +61,20 @@ export default async function AreasPage() {
 
   if (!user) redirect('/login')
 
-  const [areasWithSubs, glshsHistory, recentScores] = await Promise.all([
-    getAreasWithSubareas(user.id),
-    getGLSHSHistory(user.id, 90),
-    getRecentAreaScores(user.id, 7),
-  ])
+  const [areasWithSubs, glshsHistory, recentScores, alertEngineData, allSubareas] =
+    await Promise.all([
+      getAreasWithSubareas(user.id),
+      getGLSHSHistory(user.id, 90),
+      getRecentAreaScores(user.id, 7),
+      getAlertEngineData(user.id),
+      getSubareasByUser(user.id),
+    ])
 
   if (areasWithSubs.length === 0) return <EmptyState />
 
   const previousScoreMap = buildPreviousScoreMap(recentScores)
+
+  const activeAlerts = evaluateAlertRules(areasWithSubs, allSubareas, alertEngineData)
 
   // Split by Maslow group
   const dNeeds = areasWithSubs.filter((a: AreaWithSubareas) => a.group === 'd_needs')
@@ -74,6 +82,9 @@ export default async function AreasPage() {
 
   return (
     <div className="space-y-6">
+      {/* Zona 0 — Alert Banner */}
+      {activeAlerts.length > 0 && <MaslowAlertBanner alerts={activeAlerts} />}
+
       {/* Zona 1 — GLSHS Chart */}
       <GLSHSChart data={glshsHistory} />
 

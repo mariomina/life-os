@@ -1,6 +1,14 @@
 import { eq, asc, and, gte, desc } from 'drizzle-orm'
 import { db, assertDatabaseUrl } from '@/lib/db/client'
-import { areas, areaSubareas, habits, stepsActivities, projects, okrs } from '@/lib/db/schema'
+import {
+  areas,
+  areaSubareas,
+  habits,
+  stepsActivities,
+  projects,
+  okrs,
+  areaSubareaScores,
+} from '@/lib/db/schema'
 import { areaScores } from '@/lib/db/schema/area-scores'
 import { MASLOW_WEIGHTS, MASLOW_TOTAL_WEIGHT, type MaslowLevel } from '@/lib/utils/maslow-weights'
 import type { Area } from '@/lib/db/schema/areas'
@@ -324,4 +332,123 @@ export async function getAreaDetailWithSources(
   }))
 
   return { ...area, subareas: subareaDetails, areaProjects, scoreHistory }
+}
+
+// ─── Story 11.8 — Alert Engine Data ───────────────────────────────────────────
+
+export interface AlertEngineData {
+  /** Completed activities last 7 days, counted by subareaId */
+  activitiesBySubarea: Record<string, number>
+  /** Total completed activities last 7 days */
+  totalActivities: number
+  /** Daily scores for L1+L2 areas (last 90 days), keyed by areaId */
+  l1l2ScoreHistory: Record<string, { score: number; date: string }[]>
+  /** Sleep subarea behavioral scores (last 3 days) */
+  sleepScores: { behavioralScore: number; scoredAt: string }[]
+}
+
+/**
+ * Returns all data needed by the alert engine pure function.
+ * Used by /areas page to evaluate Maslow alert rules server-side.
+ */
+export async function getAlertEngineData(userId: string): Promise<AlertEngineData> {
+  assertDatabaseUrl()
+
+  const now = new Date()
+
+  const sevenDaysAgo = new Date(now)
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
+
+  const ninetyDaysAgo = new Date(now)
+  ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90)
+  const ninetyDaysStr = ninetyDaysAgo.toISOString().slice(0, 10)
+
+  const threeDaysAgo = new Date(now)
+  threeDaysAgo.setDate(threeDaysAgo.getDate() - 3)
+  const threeDaysStr = threeDaysAgo.toISOString().slice(0, 10)
+
+  // Find the L1 area to locate the sleep subarea
+  const [l1Area] = await db
+    .select({ id: areas.id })
+    .from(areas)
+    .where(and(eq(areas.userId, userId), eq(areas.maslowLevel, 1)))
+    .limit(1)
+
+  let sleepSubareaId: string | null = null
+  if (l1Area) {
+    const [sleepSub] = await db
+      .select({ id: areaSubareas.id })
+      .from(areaSubareas)
+      .where(and(eq(areaSubareas.areaId, l1Area.id), eq(areaSubareas.slug, 'sueno')))
+      .limit(1)
+    sleepSubareaId = sleepSub?.id ?? null
+  }
+
+  const [activityRows, scoreRows, sleepScoreRows] = await Promise.all([
+    // Activities by subarea (last 7 days)
+    db
+      .select({ subareaId: stepsActivities.subareaId })
+      .from(stepsActivities)
+      .where(
+        and(
+          eq(stepsActivities.userId, userId),
+          eq(stepsActivities.status, 'completed'),
+          gte(stepsActivities.completedAt, sevenDaysAgo)
+        )
+      ),
+
+    // L1+L2 area score history (last 90 days)
+    db
+      .select({
+        areaId: areaScores.areaId,
+        score: areaScores.score,
+        scoredAt: areaScores.scoredAt,
+      })
+      .from(areaScores)
+      .innerJoin(areas, eq(areaScores.areaId, areas.id))
+      .where(and(eq(areaScores.userId, userId), gte(areaScores.scoredAt, ninetyDaysStr)))
+      .orderBy(asc(areaScores.scoredAt)),
+
+    // Sleep subarea behavioral scores (last 3 days)
+    sleepSubareaId
+      ? db
+          .select({
+            behavioralScore: areaSubareaScores.behavioralScore,
+            scoredAt: areaSubareaScores.scoredAt,
+          })
+          .from(areaSubareaScores)
+          .where(
+            and(
+              eq(areaSubareaScores.subareaId, sleepSubareaId),
+              gte(areaSubareaScores.scoredAt, threeDaysStr)
+            )
+          )
+          .orderBy(asc(areaSubareaScores.scoredAt))
+      : Promise.resolve([]),
+  ])
+
+  // Group activities by subareaId
+  const activitiesBySubarea: Record<string, number> = {}
+  for (const row of activityRows) {
+    const sid = row.subareaId ?? '__no_subarea__'
+    activitiesBySubarea[sid] = (activitiesBySubarea[sid] ?? 0) + 1
+  }
+
+  // Group score history by areaId
+  const l1l2ScoreHistory: Record<string, { score: number; date: string }[]> = {}
+  for (const row of scoreRows) {
+    const existing = l1l2ScoreHistory[row.areaId] ?? []
+    existing.push({ score: row.score, date: row.scoredAt })
+    l1l2ScoreHistory[row.areaId] = existing
+  }
+
+  return {
+    activitiesBySubarea,
+    totalActivities: activityRows.length,
+    l1l2ScoreHistory,
+    sleepScores: sleepScoreRows.map((r) => ({
+      behavioralScore: r.behavioralScore ?? 0,
+      scoredAt: r.scoredAt,
+    })),
+  }
 }
