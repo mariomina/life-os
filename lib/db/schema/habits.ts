@@ -1,5 +1,6 @@
 import { pgTable, uuid, text, boolean, integer, date, timestamp, index } from 'drizzle-orm/pg-core'
 import { areas } from './areas'
+import { areaSubareas } from './area-subareas'
 
 /**
  * Recurring habits driven by rrule (RFC 5545).
@@ -13,6 +14,8 @@ export const habits = pgTable(
     id: uuid('id').defaultRandom().primaryKey(),
     userId: uuid('user_id').notNull(),
     areaId: uuid('area_id').references(() => areas.id, { onDelete: 'set null' }),
+    /** Optional — narrows the habit to a specific sub-area within the parent area */
+    subareaId: uuid('subarea_id').references(() => areaSubareas.id, { onDelete: 'set null' }),
     title: text('title').notNull(),
     description: text('description'),
     /** RFC 5545 rrule string. Example: "FREQ=DAILY;BYHOUR=7;BYMINUTE=0" */

@@ -33,6 +33,7 @@ export interface ICalendarEvent {
   description?: string
   planned?: boolean
   areaId?: string
+  subareaId?: string
   calendarId?: string
   calendarColor?: string // hex — tiene precedencia sobre color de área en la UI
   calendarName?: string
@@ -56,6 +57,7 @@ interface ActivityLike {
   scheduledDurationMinutes: number | null
   planned?: boolean
   areaId?: string | null
+  subareaId?: string | null
   calendarId?: string | null
   calendarColor?: string | null
   calendarName?: string | null
@@ -90,6 +92,7 @@ export function toCalendarEvent(
     ...(activity.description != null && { description: activity.description }),
     ...(activity.planned != null && { planned: activity.planned }),
     ...(activity.areaId != null && { areaId: activity.areaId }),
+    ...(activity.subareaId != null && { subareaId: activity.subareaId }),
     ...(activity.calendarId != null && { calendarId: activity.calendarId }),
     ...(activity.calendarColor != null && { calendarColor: activity.calendarColor }),
     ...(activity.calendarName != null && { calendarName: activity.calendarName }),
@@ -220,6 +223,51 @@ export function getEventsForDay(events: ICalendarEvent[], day: Date): ICalendarE
  */
 export function getEventsForRange(events: ICalendarEvent[], range: IDateRange): ICalendarEvent[] {
   return events.filter((e) => e.start <= range.end && e.end >= range.start)
+}
+
+// ─── Close Journal — Gap Detection ───────────────────────────────────────────
+
+export interface DayGap {
+  from: number // minutos desde medianoche
+  to: number // minutos desde medianoche
+  durationMin: number
+}
+
+/**
+ * Detects untracked time gaps in a given day.
+ * @param events      All calendar events
+ * @param date        The day to analyze
+ * @param minGapMinutes  Minimum gap size to report (default 5 min)
+ * @param thresholdMin   End-of-day boundary in minutes from midnight (default 21:30 = 1290)
+ */
+export function detectDayGaps(
+  events: ICalendarEvent[],
+  date: Date,
+  minGapMinutes = 5,
+  thresholdMin = 21 * 60 + 30
+): DayGap[] {
+  const dayEvents = getEventsForDay(events, date)
+    .filter((e) => !e.isAllDay && isSameDay(e.start, date))
+    .sort((a, b) => a.start.getTime() - b.start.getTime())
+
+  const gaps: DayGap[] = []
+  let cursor = 0 // 00:00 en minutos
+
+  for (const evt of dayEvents) {
+    const evtStart = evt.start.getHours() * 60 + evt.start.getMinutes()
+    if (evtStart > cursor + minGapMinutes) {
+      gaps.push({ from: cursor, to: evtStart, durationMin: evtStart - cursor })
+    }
+    const evtEnd = evt.end.getHours() * 60 + evt.end.getMinutes()
+    cursor = Math.max(cursor, evtEnd)
+  }
+
+  // Gap final hasta la hora umbral (no hasta medianoche)
+  if (cursor < thresholdMin - minGapMinutes) {
+    gaps.push({ from: cursor, to: thresholdMin, durationMin: thresholdMin - cursor })
+  }
+
+  return gaps
 }
 
 // ─── Formatting helpers ───────────────────────────────────────────────────────

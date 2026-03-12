@@ -21,6 +21,7 @@ function makeArea(
     weightMultiplier: String(MASLOW_WEIGHTS[maslowLevel as keyof typeof MASLOW_WEIGHTS]),
     currentScore,
     lastActivityAt: null,
+    scoreUpdatedAt: null,
     createdAt: new Date(),
     updatedAt: new Date(),
   }

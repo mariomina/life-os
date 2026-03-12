@@ -15,6 +15,7 @@ function makeArea(overrides: Partial<Area> & { maslowLevel: number; name: string
     weightMultiplier: '1.0',
     currentScore: 70,
     lastActivityAt,
+    scoreUpdatedAt: null,
     createdAt: new Date(),
     updatedAt: new Date(),
     ...rest,

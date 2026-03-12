@@ -28,6 +28,11 @@ export const areas = pgTable(
     currentScore: integer('current_score').default(0).notNull(),
     /** Timestamp of last registered activity in this area */
     lastActivityAt: timestamp('last_activity_at', { withTimezone: true }),
+    /**
+     * Timestamp of last score recalculation from sub-areas (Epic 11+).
+     * null = score pre-dates sub-area system or has never been recalculated.
+     */
+    scoreUpdatedAt: timestamp('score_updated_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },

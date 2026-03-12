@@ -8,7 +8,7 @@
 // Story 10.6 — Recurrencia 'workdays': filtra festivos del usuario post-generación.
 // Story 10.7 — Tipo 'custom' con interval/unit/daysOfWeek/excludeHolidays.
 
-import { eq, and, asc, gte } from 'drizzle-orm'
+import { eq, and, asc, gte, sql } from 'drizzle-orm'
 import { format } from 'date-fns'
 import { revalidatePath } from 'next/cache'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
@@ -16,6 +16,7 @@ import { db, assertDatabaseUrl } from '@/lib/db/client'
 import { stepsActivities } from '@/lib/db/schema/steps-activities'
 import { timeEntries } from '@/lib/db/schema/time-entries'
 import { areas } from '@/lib/db/schema/areas'
+import { areaSubareas } from '@/lib/db/schema/area-subareas'
 import { getHolidaysForUser } from '@/lib/db/queries/holidays'
 import {
   generateOccurrences,
@@ -64,6 +65,7 @@ export async function createActivity(formData: FormData): Promise<ActionResult> 
   const time = (formData.get('time') as string | null) ?? ''
   const duration = Number(formData.get('duration') ?? 30)
   const areaId = (formData.get('areaId') as string | null) ?? ''
+  const subareaId = (formData.get('subareaId') as string | null) || null
   const calendarId = (formData.get('calendarId') as string | null) || null
   const description = (formData.get('description') as string | null)?.trim() || null
   const actualTimeMinutes = Number(formData.get('actualTimeMinutes') ?? 0)
@@ -100,12 +102,26 @@ export async function createActivity(formData: FormData): Promise<ActionResult> 
     assertDatabaseUrl()
     const userId = await getAuthenticatedUserId()
 
+    const resolvedAreaId = areaId && UUID_REGEX.test(areaId) ? areaId : null
+    const resolvedSubareaId = subareaId && UUID_REGEX.test(subareaId) ? subareaId : null
+
+    // Validate subarea belongs to the selected area
+    if (resolvedSubareaId && resolvedAreaId) {
+      const [subarea] = await db
+        .select({ id: areaSubareas.id })
+        .from(areaSubareas)
+        .where(and(eq(areaSubareas.id, resolvedSubareaId), eq(areaSubareas.areaId, resolvedAreaId)))
+        .limit(1)
+      if (!subarea) return { error: 'Sub-área no pertenece al área seleccionada' }
+    }
+
     const baseFields = {
       userId,
       title: trimmedTitle,
       description,
       scheduledDurationMinutes: durationMinutes,
-      areaId: areaId && UUID_REGEX.test(areaId) ? areaId : null,
+      areaId: resolvedAreaId,
+      subareaId: resolvedSubareaId,
       calendarId: calendarId ?? null,
       status: 'pending' as const,
       planned: false,
@@ -214,6 +230,7 @@ export async function updateActivity(
     time: string
     duration: number
     areaId: string | null
+    subareaId?: string | null
     calendarId: string | null
     actualTimeMinutes?: number
   }
@@ -233,6 +250,20 @@ export async function updateActivity(
     assertDatabaseUrl()
     const userId = await getAuthenticatedUserId()
 
+    const resolvedAreaId = data.areaId && UUID_REGEX.test(data.areaId) ? data.areaId : null
+    const resolvedSubareaId =
+      data.subareaId && UUID_REGEX.test(data.subareaId) ? data.subareaId : null
+
+    // Validate subarea belongs to the selected area
+    if (resolvedSubareaId && resolvedAreaId) {
+      const [subarea] = await db
+        .select({ id: areaSubareas.id })
+        .from(areaSubareas)
+        .where(and(eq(areaSubareas.id, resolvedSubareaId), eq(areaSubareas.areaId, resolvedAreaId)))
+        .limit(1)
+      if (!subarea) return { error: 'Sub-área no pertenece al área seleccionada' }
+    }
+
     await db
       .update(stepsActivities)
       .set({
@@ -240,7 +271,8 @@ export async function updateActivity(
         description: data.description,
         scheduledAt,
         scheduledDurationMinutes: durationMinutes,
-        areaId: data.areaId && UUID_REGEX.test(data.areaId) ? data.areaId : null,
+        areaId: resolvedAreaId,
+        subareaId: resolvedSubareaId,
         calendarId: data.calendarId ?? null,
         updatedAt: new Date(),
       })
@@ -270,7 +302,8 @@ export async function updateActivity(
 
 /**
  * Updates all activities sharing a recurrenceGroupId.
- * Common fields only (title, description, area, calendar, duration) — not scheduledAt.
+ * Common fields (title, description, area, calendar, duration) and optionally time (HH:mm).
+ * When time is provided, updates scheduledAt for each occurrence preserving its original date.
  */
 export async function updateActivityGroup(
   recurrenceGroupId: string,
@@ -279,7 +312,9 @@ export async function updateActivityGroup(
     description: string | null
     duration: number
     areaId: string | null
+    subareaId?: string | null
     calendarId: string | null
+    time?: string // HH:mm — si se provee, actualiza la hora de todas las ocurrencias
   }
 ): Promise<ActionResult> {
   if (!UUID_REGEX.test(recurrenceGroupId)) return { error: 'ID de grupo inválido' }
@@ -289,6 +324,65 @@ export async function updateActivityGroup(
 
   const durationMinutes = isNaN(data.duration) || data.duration <= 0 ? 30 : data.duration
 
+  // Validar formato de time si se provee
+  if (data.time !== undefined && !/^\d{2}:\d{2}$/.test(data.time)) {
+    return { error: 'Formato de hora inválido' }
+  }
+
+  try {
+    assertDatabaseUrl()
+    const userId = await getAuthenticatedUserId()
+
+    const whereClause = and(
+      eq(stepsActivities.recurrenceGroupId, recurrenceGroupId),
+      eq(stepsActivities.userId, userId)
+    )
+    const commonFields = {
+      title: trimmedTitle,
+      description: data.description,
+      scheduledDurationMinutes: durationMinutes,
+      areaId: data.areaId && UUID_REGEX.test(data.areaId) ? data.areaId : null,
+      subareaId: data.subareaId && UUID_REGEX.test(data.subareaId) ? data.subareaId : null,
+      calendarId: data.calendarId ?? null,
+      updatedAt: new Date(),
+    }
+
+    if (data.time !== undefined) {
+      // Actualiza hora de cada ocurrencia preservando su fecha original
+      await db
+        .update(stepsActivities)
+        .set({
+          ...commonFields,
+          scheduledAt: sql`date_trunc('day', ${stepsActivities.scheduledAt}) + ${data.time}::interval`,
+        })
+        .where(whereClause)
+    } else {
+      await db.update(stepsActivities).set(commonFields).where(whereClause)
+    }
+
+    revalidatePath('/calendar')
+    return { error: null }
+  } catch (err) {
+    console.error('[updateActivityGroup] failed:', err)
+    return { error: 'No se pudo actualizar el grupo de actividades.' }
+  }
+}
+
+/**
+ * Updates only the scheduled time (HH:mm) for all activities in a recurrence group.
+ * Preserves the original date of each occurrence — only changes the time component.
+ * Used by DnD scope dialog "Toda la serie".
+ */
+export async function updateGroupScheduleTime(
+  groupId: string,
+  newTime: string, // HH:mm
+  duration: number
+): Promise<ActionResult> {
+  if (!UUID_REGEX.test(groupId)) return { error: 'ID de grupo inválido' }
+  if (!/^\d{2}:\d{2}$/.test(newTime)) return { error: 'Formato de hora inválido' }
+
+  const durationMinutes = isNaN(duration) || duration <= 0 ? 30 : duration
+
   try {
     assertDatabaseUrl()
     const userId = await getAuthenticatedUserId()
@@ -296,25 +390,19 @@ export async function updateActivityGroup(
     await db
       .update(stepsActivities)
       .set({
-        title: trimmedTitle,
-        description: data.description,
+        scheduledAt: sql`date_trunc('day', ${stepsActivities.scheduledAt}) + ${newTime}::interval`,
         scheduledDurationMinutes: durationMinutes,
-        areaId: data.areaId && UUID_REGEX.test(data.areaId) ? data.areaId : null,
-        calendarId: data.calendarId ?? null,
         updatedAt: new Date(),
       })
       .where(
-        and(
-          eq(stepsActivities.recurrenceGroupId, recurrenceGroupId),
-          eq(stepsActivities.userId, userId)
-        )
+        and(eq(stepsActivities.recurrenceGroupId, groupId), eq(stepsActivities.userId, userId))
       )
 
     revalidatePath('/calendar')
     return { error: null }
   } catch (err) {
-    console.error('[updateActivityGroup] failed:', err)
-    return { error: 'No se pudo actualizar el grupo de actividades.' }
+    console.error('[updateGroupScheduleTime] failed:', err)
+    return { error: 'No se pudo actualizar el horario del grupo.' }
   }
 }
 

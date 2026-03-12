@@ -45,6 +45,7 @@ function makeActivity(overrides: Partial<ActivityForCheckin>): ActivityForChecki
     userId: 'user-1',
     taskId: null,
     areaId: null,
+    subareaId: null,
     habitId: null,
     title: 'Test activity',
     description: null,

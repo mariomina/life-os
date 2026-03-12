@@ -12,6 +12,7 @@ import { db, assertDatabaseUrl } from '@/lib/db/client'
 import { habits } from '@/lib/db/schema/habits'
 import { stepsActivities } from '@/lib/db/schema/steps-activities'
 import { areas } from '@/lib/db/schema/areas'
+import { areaSubareas } from '@/lib/db/schema/area-subareas'
 import { generateHabitOccurrences, isValidRrule } from '@/lib/habits/occurrence-utils'
 import type { Habit } from '@/lib/db/schema/habits'
 
@@ -25,6 +26,7 @@ export interface CreateHabitData {
   title: string
   description?: string
   areaId: string
+  subareaId?: string
   rrule: string
   durationMinutes?: number
 }
@@ -33,6 +35,7 @@ export interface UpdateHabitData {
   title?: string
   description?: string
   areaId?: string
+  subareaId?: string | null
   rrule?: string
   durationMinutes?: number
 }
@@ -95,11 +98,22 @@ export async function createHabit(data: CreateHabitData): Promise<ActionResult> 
       return { error: 'El área seleccionada no existe' }
     }
 
+    // Validate subarea belongs to the selected area
+    if (data.subareaId) {
+      const [subarea] = await db
+        .select({ id: areaSubareas.id })
+        .from(areaSubareas)
+        .where(and(eq(areaSubareas.id, data.subareaId), eq(areaSubareas.areaId, data.areaId)))
+        .limit(1)
+      if (!subarea) return { error: 'Sub-área no pertenece al área seleccionada' }
+    }
+
     const [newHabit] = await db
       .insert(habits)
       .values({
         userId,
         areaId: data.areaId,
+        subareaId: data.subareaId ?? null,
         title: data.title.trim(),
         description: data.description?.trim() ?? null,
         rrule: data.rrule,
@@ -149,10 +163,41 @@ export async function updateHabit(id: string, data: UpdateHabitData): Promise<Ac
       }
     }
 
+    // Validate subarea belongs to the area (use provided areaId or look it up)
+    if (data.subareaId !== undefined && data.subareaId !== null) {
+      const effectiveAreaId = data.areaId
+      if (!effectiveAreaId) {
+        // If areaId not being updated, fetch current habit's areaId for validation
+        const [current] = await db
+          .select({ areaId: habits.areaId })
+          .from(habits)
+          .where(and(eq(habits.id, id), eq(habits.userId, userId)))
+          .limit(1)
+        if (current?.areaId) {
+          const [subarea] = await db
+            .select({ id: areaSubareas.id })
+            .from(areaSubareas)
+            .where(
+              and(eq(areaSubareas.id, data.subareaId), eq(areaSubareas.areaId, current.areaId))
+            )
+            .limit(1)
+          if (!subarea) return { error: 'Sub-área no pertenece al área seleccionada' }
+        }
+      } else {
+        const [subarea] = await db
+          .select({ id: areaSubareas.id })
+          .from(areaSubareas)
+          .where(and(eq(areaSubareas.id, data.subareaId), eq(areaSubareas.areaId, effectiveAreaId)))
+          .limit(1)
+        if (!subarea) return { error: 'Sub-área no pertenece al área seleccionada' }
+      }
+    }
+
     const updatePayload: Record<string, unknown> = { updatedAt: new Date() }
     if (data.title !== undefined) updatePayload.title = data.title.trim()
     if (data.description !== undefined) updatePayload.description = data.description?.trim() ?? null
     if (data.areaId !== undefined) updatePayload.areaId = data.areaId
+    if ('subareaId' in data) updatePayload.subareaId = data.subareaId ?? null
     if (data.rrule !== undefined) updatePayload.rrule = data.rrule
     if (data.durationMinutes !== undefined) updatePayload.durationMinutes = data.durationMinutes
 

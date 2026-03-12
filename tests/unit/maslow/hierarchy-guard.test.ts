@@ -16,6 +16,7 @@ function makeArea(maslowLevel: number, name: string): Area {
     weightMultiplier: '1.0',
     currentScore: 70,
     lastActivityAt: null,
+    scoreUpdatedAt: null,
     createdAt: new Date(),
     updatedAt: new Date(),
   }

@@ -7,6 +7,8 @@ import { useRef, useEffect, useState, useTransition } from 'react'
 import { format } from 'date-fns'
 import { X, CalendarDays, CheckCircle2, RefreshCw, Plus, Check } from 'lucide-react'
 import { createActivity } from '@/actions/calendar'
+import type { AreaOption } from '@/actions/calendar'
+import type { AreaSubarea } from '@/lib/db/schema/area-subareas'
 import type { Calendar } from '@/lib/db/queries/calendars'
 import { ColorPicker, CALENDAR_COLORS } from './CalendarSidebar'
 import {
@@ -28,6 +30,8 @@ interface NewActivityModalProps {
   calendars?: Calendar[]
   /** Fuerza la apertura en un modo específico */
   initialMode?: ModalMode
+  /** Pre-rellena la duración (min) — para "Registrar gap" del Diario de Cierre */
+  defaultDuration?: number
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -64,6 +68,7 @@ export function NewActivityModal({
   defaultDate,
   calendars = [],
   initialMode = 'plan',
+  defaultDuration,
 }: NewActivityModalProps) {
   const dialogRef = useRef<HTMLDialogElement>(null)
   const [error, setError] = useState<string | null>(null)
@@ -74,6 +79,13 @@ export function NewActivityModal({
 
   // ── Shared state ────────────────────────────────────────────────────────────
   const [description, setDescription] = useState('')
+
+  // ── Area + Subarea ───────────────────────────────────────────────────────────
+  const [areas, setAreas] = useState<AreaOption[]>([])
+  const [selectedAreaId, setSelectedAreaId] = useState('')
+  const [subareas, setSubareas] = useState<AreaSubarea[]>([])
+  const [selectedSubareaId, setSelectedSubareaId] = useState('')
+
   const [localCalendars, setLocalCalendars] = useState<Calendar[]>(calendars)
   const [selectedCalId, setSelectedCalId] = useState<string>(
     calendars.find((c) => c.isDefault)?.id ?? ''
@@ -85,10 +97,26 @@ export function NewActivityModal({
   const [isCreatingCal, setIsCreatingCal] = useState(false)
 
   // ── "Planear" state ─────────────────────────────────────────────────────────
-  const [durationMode, setDurationMode] = useState<'preset' | 'custom'>('preset')
-  const [presetDuration, setPresetDuration] = useState(30)
-  const [customHours, setCustomHours] = useState(0)
-  const [customMins, setCustomMins] = useState(30)
+  const [durationMode, setDurationMode] = useState<'preset' | 'custom'>(() => {
+    if (!defaultDuration) return 'preset'
+    const isPreset = DURATION_OPTIONS.some((o) => o.value === defaultDuration && o.value > 0)
+    return isPreset ? 'preset' : 'custom'
+  })
+  const [presetDuration, setPresetDuration] = useState(() => {
+    if (!defaultDuration) return 30
+    const isPreset = DURATION_OPTIONS.some((o) => o.value === defaultDuration && o.value > 0)
+    return isPreset ? defaultDuration : 30
+  })
+  const [customHours, setCustomHours] = useState(() =>
+    defaultDuration && !DURATION_OPTIONS.some((o) => o.value === defaultDuration && o.value > 0)
+      ? Math.floor(defaultDuration / 60)
+      : 0
+  )
+  const [customMins, setCustomMins] = useState(() =>
+    defaultDuration && !DURATION_OPTIONS.some((o) => o.value === defaultDuration && o.value > 0)
+      ? defaultDuration % 60
+      : 30
+  )
   const [isAllDay, setIsAllDay] = useState(false)
   const [recurrenceType, setRecurrenceType] = useState<RecurrenceType>('none')
   const [recurrenceEndType, setRecurrenceEndType] = useState<'count' | 'date' | 'never'>('count')
@@ -100,8 +128,19 @@ export function NewActivityModal({
   const [customExcludeHolidays, setCustomExcludeHolidays] = useState(false)
 
   // ── "Registrar" state ───────────────────────────────────────────────────────
-  const [logHours, setLogHours] = useState(0)
-  const [logMins, setLogMins] = useState(30)
+  const [logStartTime, setLogStartTime] = useState(() => {
+    const h = defaultDate.getHours()
+    if (h > 0) return `${String(h).padStart(2, '0')}:00`
+    const now = new Date()
+    now.setMinutes(0, 0, 0)
+    now.setHours(now.getHours() + 1)
+    return format(now, 'HH:mm')
+  })
+  const [logEndTime, setLogEndTime] = useState(() => {
+    const h = defaultDate.getHours()
+    const base = h > 0 ? h : new Date().getHours() + 1
+    return `${String(Math.min(base + 1, 23)).padStart(2, '0')}:00`
+  })
 
   // ── Derived ─────────────────────────────────────────────────────────────────
   const effectiveDuration =
@@ -155,6 +194,30 @@ export function NewActivityModal({
     })
   }
 
+  // Load areas on mount
+  useEffect(() => {
+    import('@/actions/calendar').then(({ getAreasForUser }) => {
+      getAreasForUser()
+        .then(setAreas)
+        .catch(() => {})
+    })
+  }, [])
+
+  // Load subareas when area changes
+  useEffect(() => {
+    if (!selectedAreaId) {
+      setSubareas([])
+      setSelectedSubareaId('')
+      return
+    }
+    import('@/lib/db/queries/areas').then(({ getSubareasByArea }) => {
+      getSubareasByArea(selectedAreaId)
+        .then(setSubareas)
+        .catch(() => setSubareas([]))
+    })
+    setSelectedSubareaId('')
+  }, [selectedAreaId])
+
   useEffect(() => {
     const dialog = dialogRef.current
     if (dialog) dialog.showModal()
@@ -170,8 +233,12 @@ export function NewActivityModal({
 
   function handleSubmit(formData: FormData) {
     if (mode === 'log') {
-      // Registrar actividad pasada: duración = tiempo real gastado
-      const totalMins = Math.max(1, logHours * 60 + logMins)
+      // Registrar actividad pasada: duración = diferencia entre hora inicio y hora fin
+      const [sh, sm] = logStartTime.split(':').map(Number)
+      const [eh, em] = logEndTime.split(':').map(Number)
+      let totalMins = eh * 60 + em - (sh * 60 + sm)
+      if (totalMins <= 0) totalMins += 24 * 60 // cruce de medianoche
+      totalMins = Math.max(1, totalMins)
       formData.set('duration', String(totalMins))
       formData.set('actualTimeMinutes', String(totalMins))
       formData.set('recurrenceType', 'none')
@@ -364,14 +431,15 @@ export function NewActivityModal({
             ) : (
               <>
                 <label htmlFor="time" className="text-sm font-medium text-foreground">
-                  Hora <span className="text-red-500">*</span>
+                  Hora inicio <span className="text-red-500">*</span>
                 </label>
                 <input
                   id="time"
                   name="time"
                   type="time"
                   required
-                  defaultValue={defaultTime}
+                  value={logStartTime}
+                  onChange={(e) => setLogStartTime(e.target.value)}
                   className={inputCls}
                 />
               </>
@@ -662,47 +730,73 @@ export function NewActivityModal({
           </>
         )}
 
-        {/* ══ TAB: REGISTRAR ════════════════════════════════════════════════════ */}
+        {/* ══ TAB: REGISTRAR — Hora fin ═════════════════════════════════════════ */}
         {mode === 'log' && (
-          <div className="space-y-1 rounded-xl border border-border bg-muted/20 p-4">
-            <label className="text-sm font-medium text-foreground">
-              Tiempo dedicado <span className="text-red-500">*</span>
+          <div className="space-y-1.5">
+            <label htmlFor="logEndTime" className="text-sm font-medium text-foreground">
+              Hora fin <span className="text-red-500">*</span>
             </label>
-            <p className="text-xs text-muted-foreground mb-2">
-              ¿Cuánto tiempo le dedicaste a esta actividad?
-            </p>
-            <div className="flex items-center gap-3">
-              <div className="flex items-center gap-1.5">
-                <input
-                  type="number"
-                  min={0}
-                  max={23}
-                  value={logHours}
-                  onChange={(e) => setLogHours(Math.max(0, Math.min(23, Number(e.target.value))))}
-                  className="w-16 rounded-lg border border-border bg-background px-2 py-2 text-sm text-center focus:outline-none focus:ring-2 focus:ring-primary/50"
-                />
-                <span className="text-sm text-muted-foreground">h</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <select
-                  value={logMins}
-                  onChange={(e) => setLogMins(Number(e.target.value))}
-                  className="w-20 rounded-lg border border-border bg-background px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
-                >
-                  {[0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55].map((m) => (
-                    <option key={m} value={m}>
-                      {String(m).padStart(2, '0')}
-                    </option>
-                  ))}
-                </select>
-                <span className="text-sm text-muted-foreground">min</span>
-              </div>
-              {(logHours > 0 || logMins > 0) && (
-                <span className="text-xs text-primary font-medium">
-                  = {logHours * 60 + logMins} min
-                </span>
-              )}
-            </div>
+            <input
+              id="logEndTime"
+              type="time"
+              value={logEndTime}
+              onChange={(e) => setLogEndTime(e.target.value)}
+              className={inputCls}
+            />
+            {logEndTime &&
+              (() => {
+                const [sh, sm] = logStartTime.split(':').map(Number)
+                const [eh, em] = logEndTime.split(':').map(Number)
+                let diff = eh * 60 + em - (sh * 60 + sm)
+                if (diff <= 0) diff += 24 * 60
+                const h = Math.floor(diff / 60)
+                const m = diff % 60
+                const label = h > 0 ? (m > 0 ? `${h}h ${m}min` : `${h}h`) : `${m}min`
+                return <p className="text-xs text-muted-foreground">Duración: {label}</p>
+              })()}
+          </div>
+        )}
+
+        {/* ── Área + Sub-área (compartido) ── */}
+        <div className="space-y-1">
+          <label htmlFor="areaId" className="text-sm font-medium text-foreground">
+            Área
+          </label>
+          <select
+            id="areaId"
+            name="areaId"
+            value={selectedAreaId}
+            onChange={(e) => setSelectedAreaId(e.target.value)}
+            className={selectCls}
+          >
+            <option value="">Sin área</option>
+            {areas.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        {selectedAreaId && subareas.length > 0 && (
+          <div className="space-y-1">
+            <label htmlFor="subareaId" className="text-sm font-medium text-foreground">
+              Sub-área <span className="text-muted-foreground text-xs">(opcional)</span>
+            </label>
+            <select
+              id="subareaId"
+              name="subareaId"
+              value={selectedSubareaId}
+              onChange={(e) => setSelectedSubareaId(e.target.value)}
+              className={selectCls}
+            >
+              <option value="">Sub-área (opcional)</option>
+              {subareas.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                  {s.isOptional ? ' (Opcional)' : ''}
+                </option>
+              ))}
+            </select>
           </div>
         )}
 
@@ -819,7 +913,7 @@ export function NewActivityModal({
           </button>
           <button
             type="submit"
-            disabled={isPending || (mode === 'log' && logHours === 0 && logMins === 0)}
+            disabled={isPending || (mode === 'log' && !logEndTime)}
             className="rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
           >
             {isPending

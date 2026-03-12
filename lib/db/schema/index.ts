@@ -20,6 +20,12 @@ export * from './skills'
 export * from './habits'
 export * from './calendars'
 
+// ── Level 1.5: Depend on areas (sub-area tables) ──────────────
+export * from './area-subareas'
+
+// ── Level 1.6: Depend on area-subareas ────────────────────────
+export * from './area-subarea-scores'
+
 // ── Level 2: Depend on Level 1 ────────────────────────────────
 export * from './area-scores'
 export * from './okrs'
@@ -45,6 +51,7 @@ export * from './aios-queue-log'
 
 // ── Level 8: Independent analytics ───────────────────────────
 export * from './correlations'
+export * from './user-events'
 
 // ── Level 9: Independent user data ────────────────────────────
 export * from './holidays'

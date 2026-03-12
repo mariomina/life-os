@@ -1,10 +1,11 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Input } from '@/components/ui/input'
 import { isValidRrule, buildRruleString } from '@/lib/habits/occurrence-utils'
 import type { Area } from '@/lib/db/schema/areas'
 import type { Habit } from '@/lib/db/schema/habits'
+import type { AreaSubarea } from '@/lib/db/schema/area-subareas'
 
 type FrequencyPreset = 'daily' | 'weekly' | 'custom'
 
@@ -12,6 +13,7 @@ interface HabitFormData {
   title: string
   description: string
   areaId: string
+  subareaId?: string
   rrule: string
   durationMinutes: number
 }
@@ -46,6 +48,8 @@ export function HabitForm({
   const [title, setTitle] = useState(initialData?.title ?? '')
   const [description, setDescription] = useState(initialData?.description ?? '')
   const [areaId, setAreaId] = useState(initialData?.areaId ?? '')
+  const [subareaId, setSubareaId] = useState(initialData?.subareaId ?? '')
+  const [subareas, setSubareas] = useState<AreaSubarea[]>([])
   const [durationMinutes, setDurationMinutes] = useState(initialData?.durationMinutes ?? 30)
   const [hour, setHour] = useState(7)
   const [selectedDays, setSelectedDays] = useState<number[]>([0, 2, 4]) // Mon, Wed, Fri
@@ -53,6 +57,21 @@ export function HabitForm({
   const [customRrule, setCustomRrule] = useState(initialData?.rrule ?? '')
   const [rruleError, setRruleError] = useState('')
   const [formError, setFormError] = useState('')
+
+  // Load subareas when area changes
+  useEffect(() => {
+    if (!areaId) {
+      setSubareas([])
+      setSubareaId('')
+      return
+    }
+    import('@/lib/db/queries/areas').then(({ getSubareasByArea }) => {
+      getSubareasByArea(areaId)
+        .then(setSubareas)
+        .catch(() => setSubareas([]))
+    })
+    setSubareaId('')
+  }, [areaId])
 
   function getComputedRrule(): string {
     if (preset === 'custom') return customRrule
@@ -88,7 +107,14 @@ export function HabitForm({
       return
     }
 
-    onSubmit({ title: title.trim(), description, areaId, rrule, durationMinutes })
+    onSubmit({
+      title: title.trim(),
+      description,
+      areaId,
+      subareaId: subareaId || undefined,
+      rrule,
+      durationMinutes,
+    })
   }
 
   return (
@@ -145,6 +171,29 @@ export function HabitForm({
           ))}
         </select>
       </div>
+
+      {/* Sub-area */}
+      {areaId && subareas.length > 0 && (
+        <div className="space-y-1">
+          <label className="text-sm font-medium text-foreground" htmlFor="habit-subarea">
+            Sub-área <span className="text-muted-foreground text-xs font-normal">(opcional)</span>
+          </label>
+          <select
+            id="habit-subarea"
+            value={subareaId}
+            onChange={(e) => setSubareaId(e.target.value)}
+            className="w-full rounded-xl border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+          >
+            <option value="">Sub-área (opcional)</option>
+            {subareas.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name}
+                {s.isOptional ? ' (Opcional)' : ''}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
       {/* Frequency preset */}
       <div className="space-y-2">

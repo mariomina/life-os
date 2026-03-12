@@ -32,6 +32,7 @@ export function HabitList({ habits: initialHabits, areas }: HabitListProps) {
     title: string
     description: string
     areaId: string
+    subareaId?: string
     rrule: string
     durationMinutes: number
   }) {
@@ -49,6 +50,7 @@ export function HabitList({ habits: initialHabits, areas }: HabitListProps) {
     title: string
     description: string
     areaId: string
+    subareaId?: string
     rrule: string
     durationMinutes: number
   }) {

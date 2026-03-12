@@ -1,15 +1,7 @@
-'use server'
+import { describe, it, expect } from 'vitest'
 
-import { db } from '@/lib/db/client'
-import { areaSubareas } from '@/lib/db/schema'
-import type { Area } from '@/lib/db/schema'
-import { createSupabaseServerClient } from '@/lib/supabase/server'
-
-export type OnboardingMethod = 'questionnaire' | 'upload'
-
-// ── Sub-area definitions per Maslow level ────────────────────────────────────
-// Ordered by displayOrder (1 = highest behavioral impact / internal weight).
-// Sources: docs/briefs/areas-redesign-brief.md#4-subareas + docs/areas.md
+// ── Inline the definitions from onboarding.ts for pure unit testing ───────────
+// We test the seed logic without hitting the DB.
 
 interface SubareaDef {
   slug: string
@@ -271,83 +263,130 @@ const SUBAREAS_BY_LEVEL: Record<number, SubareaDef[]> = {
   ],
 }
 
-/**
- * Seeds all sub-areas for a user's 8 Maslow areas.
- * Creates ~46 rows (44 standard + 2 optional) ordered by behavioral impact.
- * Safe to call multiple times — uses onConflictDoNothing on (area_id, slug).
- *
- * [Source: docs/briefs/areas-redesign-brief.md#4-subareas]
- */
-export async function seedAreaSubareas(
-  userId: string,
-  userAreas: Pick<Area, 'id' | 'maslowLevel'>[]
-): Promise<{ count: number; error: string | null }> {
-  try {
-    const rows = userAreas.flatMap((area) => {
-      const defs = SUBAREAS_BY_LEVEL[area.maslowLevel] ?? []
-      return defs.map((def) => ({
-        areaId: area.id,
-        userId,
-        maslowLevel: area.maslowLevel,
-        name: def.name,
-        slug: def.slug,
-        internalWeight: def.internalWeight,
-        displayOrder: def.displayOrder,
-        isOptional: def.isOptional ?? false,
-        currentScore: 0,
-        isActive: true,
-      }))
-    })
-
-    if (rows.length === 0) return { count: 0, error: null }
-
-    await db.insert(areaSubareas).values(rows).onConflictDoNothing()
-
-    return { count: rows.length, error: null }
-  } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unknown error'
-    return { count: 0, error: message }
-  }
+/** Builds rows exactly as seedAreaSubareas does — pure function, no DB */
+function buildSeedRows(userId: string, userAreas: { id: string; maslowLevel: number }[]) {
+  return userAreas.flatMap((area) => {
+    const defs = SUBAREAS_BY_LEVEL[area.maslowLevel] ?? []
+    return defs.map((def) => ({
+      areaId: area.id,
+      userId,
+      maslowLevel: area.maslowLevel,
+      name: def.name,
+      slug: def.slug,
+      internalWeight: def.internalWeight,
+      displayOrder: def.displayOrder,
+      isOptional: def.isOptional ?? false,
+      currentScore: 0,
+      isActive: true,
+    }))
+  })
 }
 
-/**
- * Checks if the current user has completed onboarding.
- * Returns `completed: true` if user_metadata.onboarding_completed is true.
- * Returns `completed: false` for new users without metadata.
- */
-export async function checkOnboardingStatus(): Promise<{ completed: boolean }> {
-  const supabase = await createSupabaseServerClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+/** Fake 8 areas with sequential UUIDs */
+const FAKE_AREAS = Array.from({ length: 8 }, (_, i) => ({
+  id: `area-${i + 1}-uuid`,
+  maslowLevel: i + 1,
+}))
 
-  if (!user) {
-    return { completed: false }
-  }
-
-  const completed = user.user_metadata?.onboarding_completed === true
-  return { completed }
-}
-
-/**
- * Saves the chosen onboarding method to user_metadata.
- * Sets onboarding_method and keeps onboarding_completed: false
- * (set to true in Story 2.4 when diagnosis is fully complete).
- */
-export async function saveOnboardingMethod(
-  method: OnboardingMethod
-): Promise<{ error: string | null }> {
-  const supabase = await createSupabaseServerClient()
-  const { error } = await supabase.auth.updateUser({
-    data: {
-      onboarding_method: method,
-      onboarding_completed: false,
-    },
+describe('seedAreaSubareas — row generation', () => {
+  it('generates exactly 46 rows for all 8 areas', () => {
+    const rows = buildSeedRows('user-1', FAKE_AREAS)
+    expect(rows).toHaveLength(46)
   })
 
-  if (error) {
-    return { error: error.message }
-  }
+  it('each row has currentScore = 0 and isActive = true', () => {
+    const rows = buildSeedRows('user-1', FAKE_AREAS)
+    for (const row of rows) {
+      expect(row.currentScore).toBe(0)
+      expect(row.isActive).toBe(true)
+    }
+  })
 
-  return { error: null }
-}
+  it('every row carries the correct userId', () => {
+    const rows = buildSeedRows('user-xyz', FAKE_AREAS)
+    for (const row of rows) {
+      expect(row.userId).toBe('user-xyz')
+    }
+  })
+
+  it('level 1 has 7 sub-areas (including 1 optional)', () => {
+    const rows = buildSeedRows('u', FAKE_AREAS).filter((r) => r.maslowLevel === 1)
+    expect(rows).toHaveLength(7)
+    const optionals = rows.filter((r) => r.isOptional)
+    expect(optionals).toHaveLength(1)
+    expect(optionals[0].slug).toBe('salud_sexual')
+  })
+
+  it('level 3 has 6 sub-areas (including mascotas optional)', () => {
+    const rows = buildSeedRows('u', FAKE_AREAS).filter((r) => r.maslowLevel === 3)
+    expect(rows).toHaveLength(6)
+    const mascotas = rows.find((r) => r.slug === 'mascotas')
+    expect(mascotas?.isOptional).toBe(true)
+  })
+
+  it('non-optional sub-areas have isOptional = false', () => {
+    const rows = buildSeedRows('u', FAKE_AREAS)
+    const required = rows.filter((r) => !r.isOptional)
+    expect(required).toHaveLength(44)
+  })
+
+  it('displayOrder starts at 1 for the first sub-area of each level', () => {
+    for (let level = 1; level <= 8; level++) {
+      const rows = buildSeedRows('u', FAKE_AREAS).filter((r) => r.maslowLevel === level)
+      const sorted = [...rows].sort((a, b) => a.displayOrder - b.displayOrder)
+      expect(sorted[0].displayOrder).toBe(1)
+    }
+  })
+
+  it('displayOrder is sequential within each level (no gaps)', () => {
+    for (let level = 1; level <= 8; level++) {
+      const rows = buildSeedRows('u', FAKE_AREAS)
+        .filter((r) => r.maslowLevel === level)
+        .sort((a, b) => a.displayOrder - b.displayOrder)
+
+      rows.forEach((row, idx) => {
+        expect(row.displayOrder).toBe(idx + 1)
+      })
+    }
+  })
+
+  it('weights within each level sum to 1.000 (±0.001)', () => {
+    for (let level = 1; level <= 8; level++) {
+      const rows = buildSeedRows('u', FAKE_AREAS).filter((r) => r.maslowLevel === level)
+      const total = rows.reduce((sum, r) => sum + parseFloat(r.internalWeight), 0)
+      expect(total).toBeCloseTo(1.0, 2)
+    }
+  })
+
+  it('sueno is displayOrder 1 in level 1 (highest impact)', () => {
+    const rows = buildSeedRows('u', FAKE_AREAS).filter((r) => r.maslowLevel === 1)
+    const sueno = rows.find((r) => r.slug === 'sueno')
+    expect(sueno?.displayOrder).toBe(1)
+  })
+
+  it('seguridad_financiera is displayOrder 1 in level 2 (highest impact)', () => {
+    const rows = buildSeedRows('u', FAKE_AREAS).filter((r) => r.maslowLevel === 2)
+    const sf = rows.find((r) => r.slug === 'seguridad_financiera')
+    expect(sf?.displayOrder).toBe(1)
+  })
+
+  it('returns empty rows when userAreas is empty', () => {
+    const rows = buildSeedRows('u', [])
+    expect(rows).toHaveLength(0)
+  })
+
+  it('returns only level 5 rows when only one area passed', () => {
+    const rows = buildSeedRows('u', [{ id: 'area-5', maslowLevel: 5 }])
+    expect(rows).toHaveLength(5)
+    for (const row of rows) {
+      expect(row.maslowLevel).toBe(5)
+    }
+  })
+
+  it('all slugs are unique across all levels', () => {
+    const rows = buildSeedRows('u', FAKE_AREAS)
+    const slugs = rows.map((r) => r.slug)
+    const unique = new Set(slugs)
+    expect(unique.size).toBe(slugs.length)
+  })
+})
