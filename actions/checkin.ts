@@ -13,6 +13,9 @@ import { checkinResponses } from '@/lib/db/schema/checkin-responses'
 import { habits } from '@/lib/db/schema/habits'
 import { calculateStreak } from '@/lib/habits/streak-utils'
 import { recalculateSubareaScore, recalculateAreaScore } from '@/lib/scoring/area-calculator'
+import { areaSubareaScores } from '@/lib/db/schema/area-subarea-scores'
+import { areaSubareas } from '@/lib/db/schema/area-subareas'
+import { normalizeScore } from '@/lib/areas/checkin-scheduler'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -290,6 +293,73 @@ export async function bulkConfirmHabits(activityIds: string[]): Promise<ActionRe
     )
 
     revalidatePath('/')
+    return { error: null }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Error desconocido'
+    if (message === 'UNAUTHENTICATED') return { error: 'No autenticado' }
+    return { error: message }
+  }
+}
+
+// ─── Story 11.5 — submitSubareaCheckin ────────────────────────────────────────
+
+/**
+ * Persists a subjective checkin score for a sub-area.
+ *
+ * Flow:
+ * 1. Validate score is in [1, 10] range
+ * 2. Verify the subarea belongs to the authenticated user
+ * 3. Normalize score 1-10 → 0-100
+ * 4. UPSERT area_subarea_scores.subjectiveScore for today's date
+ * 5. Trigger recalculateSubareaScore to update the composite score
+ * 6. Revalidate /areas
+ */
+export async function submitSubareaCheckin(
+  subareaId: string,
+  score: number,
+  date: Date
+): Promise<ActionResult> {
+  assertDatabaseUrl()
+  try {
+    if (score < 1 || score > 10) {
+      return { error: 'El score debe estar entre 1 y 10' }
+    }
+
+    const userId = await getAuthenticatedUserId()
+
+    // Verify ownership
+    const subareaRows = await db
+      .select({ id: areaSubareas.id, areaId: areaSubareas.areaId })
+      .from(areaSubareas)
+      .where(and(eq(areaSubareas.id, subareaId), eq(areaSubareas.userId, userId)))
+      .limit(1)
+
+    if (subareaRows.length === 0) {
+      return { error: 'Sub-área no encontrada' }
+    }
+
+    const subjectiveScore = normalizeScore(score)
+    const scoredAt = date.toISOString().slice(0, 10) // YYYY-MM-DD
+
+    // UPSERT — update subjectiveScore for this day; preserve other components
+    await db
+      .insert(areaSubareaScores)
+      .values({
+        subareaId,
+        userId,
+        score: subjectiveScore,
+        subjectiveScore,
+        scoredAt,
+      })
+      .onConflictDoUpdate({
+        target: [areaSubareaScores.subareaId, areaSubareaScores.scoredAt],
+        set: { subjectiveScore, userId },
+      })
+
+    // Trigger recalculation to recompute composite score with new subjectiveScore
+    await recalculateSubareaScore(subareaId, userId, date)
+
+    revalidatePath('/areas')
     return { error: null }
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Error desconocido'
