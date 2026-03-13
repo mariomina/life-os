@@ -3,10 +3,12 @@
 // Schedule: diariamente a las 3:00 AM UTC (vercel.json → "0 3 * * *")
 // Story 11.4 — Triggers Automáticos + Cron de Decay.
 
-import { eq, gte, sql } from 'drizzle-orm'
+import { gte } from 'drizzle-orm'
 import { db, assertDatabaseUrl } from '@/lib/db/client'
 import { areas } from '@/lib/db/schema/areas'
 import { recalculateGlobalScore } from '@/lib/scoring/area-calculator'
+import { detectSubareaCorrelations } from '@/lib/areas/correlation-detector'
+import { SUBAREA_CORRELATION_PAIRS } from '@/lib/areas/correlation-pairs'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -36,6 +38,7 @@ export async function GET(request: Request): Promise<Response> {
     activeUsers.map(async ({ userId }) => {
       try {
         await recalculateGlobalScore(userId)
+        await detectSubareaCorrelations(userId, SUBAREA_CORRELATION_PAIRS)
         processed++
       } catch (err) {
         console.error(`[cron/recalculate-areas] failed for user ${userId}:`, err)

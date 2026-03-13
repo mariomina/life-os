@@ -9,8 +9,10 @@ import Link from 'next/link'
 import { ChevronLeft } from 'lucide-react'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { getAreaDetailWithSources } from '@/lib/db/queries/areas'
+import { getSubareaCorrelationsForArea } from '@/lib/areas/correlation-detector'
 import { AreaDetailChart } from './_components/AreaDetailChart'
 import { SubareaCard } from './_components/SubareaCard'
+import { CorrelationPanel } from './_components/CorrelationPanel'
 import type { AreaSource } from '@/lib/db/queries/areas'
 import { Briefcase } from 'lucide-react'
 
@@ -64,6 +66,10 @@ export default async function AreaDetailPage({ params }: PageProps) {
 
   if (!areaDetail) notFound()
 
+  const areaCorrelations = await getSubareaCorrelationsForArea(user.id, areaDetail.id).catch(
+    () => []
+  )
+
   return (
     <div className="space-y-6">
       {/* Breadcrumb */}
@@ -93,7 +99,10 @@ export default async function AreaDetailPage({ params }: PageProps) {
       {/* Zona 2 — Proyectos del área (proxy — no tienen subareaId) */}
       <AreaProjectsSection projects={areaDetail.areaProjects} />
 
-      {/* Zona 3 — Grid de sub-áreas */}
+      {/* Zona 3 — Correlaciones detectadas */}
+      <CorrelationPanel correlations={areaCorrelations} />
+
+      {/* Zona 4 — Grid de sub-áreas */}
       <section className="space-y-2">
         <div className="flex items-center gap-2">
           <h2 className="text-sm font-semibold text-foreground">Sub-áreas</h2>
