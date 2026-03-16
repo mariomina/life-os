@@ -7,9 +7,11 @@ import type { ICalendarEvent } from '@/lib/calendar/calendar-utils'
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 
+const DAY = new Date(2024, 0, 15) // local Jan 15 2024
+
 function makeEvent(overrides: Partial<ICalendarEvent>): ICalendarEvent {
-  const start = overrides.start ?? new Date('2024-01-15T09:00:00Z')
-  const end = overrides.end ?? new Date('2024-01-15T09:30:00Z')
+  const start = overrides.start ?? new Date(2024, 0, 15, 9, 0, 0)
+  const end = overrides.end ?? new Date(2024, 0, 15, 9, 30, 0)
   return {
     id: 'evt-1',
     title: 'Test event',
@@ -24,7 +26,7 @@ function makeEvent(overrides: Partial<ICalendarEvent>): ICalendarEvent {
 
 describe('calcTimeBudget', () => {
   it('returns 0 committed and 1440 free when no events', () => {
-    const result = calcTimeBudget([])
+    const result = calcTimeBudget([], DAY)
     expect(result.committed).toBe(0)
     expect(result.available).toBe(1440) // 24h * 60min
     expect(result.free).toBe(1440)
@@ -33,23 +35,49 @@ describe('calcTimeBudget', () => {
   it('sums durations from multiple events correctly', () => {
     const events = [
       makeEvent({
-        start: new Date('2024-01-15T07:00:00Z'),
-        end: new Date('2024-01-15T07:30:00Z'), // 30 min
+        start: new Date(2024, 0, 15, 7, 0, 0),
+        end: new Date(2024, 0, 15, 7, 30, 0), // 30 min
       }),
       makeEvent({
         id: 'evt-2',
-        start: new Date('2024-01-15T09:00:00Z'),
-        end: new Date('2024-01-15T10:00:00Z'), // 60 min
+        start: new Date(2024, 0, 15, 9, 0, 0),
+        end: new Date(2024, 0, 15, 10, 0, 0), // 60 min
       }),
       makeEvent({
         id: 'evt-3',
-        start: new Date('2024-01-15T14:00:00Z'),
-        end: new Date('2024-01-15T14:45:00Z'), // 45 min
+        start: new Date(2024, 0, 15, 14, 0, 0),
+        end: new Date(2024, 0, 15, 14, 45, 0), // 45 min
       }),
     ]
-    const result = calcTimeBudget(events)
+    const result = calcTimeBudget(events, DAY)
     expect(result.committed).toBe(135) // 30 + 60 + 45
     expect(result.free).toBe(1440 - 135) // 1305
+  })
+
+  it('clamps midnight-crossing events to the current day only', () => {
+    // Event from 23:00 Jan15 to 01:00 Jan16 → only 60 min on Jan 15
+    const events = [
+      makeEvent({
+        start: new Date(2024, 0, 15, 23, 0, 0),
+        end: new Date(2024, 0, 16, 1, 0, 0), // 120 min total, 60 on Jan 15
+      }),
+    ]
+    const result = calcTimeBudget(events, DAY)
+    expect(result.committed).toBe(60) // only 60 min on Jan 15
+    expect(result.free).toBe(1440 - 60) // 1380
+  })
+
+  it('counts the next-day portion for a midnight-crossing event', () => {
+    // Same event counted from Jan 16's perspective → only 60 min on Jan 16
+    const events = [
+      makeEvent({
+        start: new Date(2024, 0, 15, 23, 0, 0),
+        end: new Date(2024, 0, 16, 1, 0, 0),
+      }),
+    ]
+    const day16 = new Date(2024, 0, 16)
+    const result = calcTimeBudget(events, day16)
+    expect(result.committed).toBe(60) // only 60 min on Jan 16
   })
 
   it('shows negative free when committed exceeds available (overcommitted)', () => {
@@ -57,11 +85,11 @@ describe('calcTimeBudget', () => {
     const events = Array.from({ length: 25 }, (_, i) =>
       makeEvent({
         id: `evt-${i}`,
-        start: new Date(`2024-01-15T${String(i % 24).padStart(2, '0')}:00:00Z`),
-        end: new Date(`2024-01-15T${String((i % 24) + 1).padStart(2, '0')}:00:00Z`),
+        start: new Date(2024, 0, 15, i % 24, 0, 0),
+        end: new Date(2024, 0, 15, (i % 24) + 1, 0, 0),
       })
     )
-    const result = calcTimeBudget(events)
+    const result = calcTimeBudget(events, DAY)
     expect(result.committed).toBe(25 * 60) // 1500 min
     expect(result.free).toBe(1440 - 1500) // -60
     expect(result.free).toBeLessThan(0)
@@ -70,19 +98,19 @@ describe('calcTimeBudget', () => {
   it('handles a single 8-hour event', () => {
     const events = [
       makeEvent({
-        start: new Date('2024-01-15T09:00:00Z'),
-        end: new Date('2024-01-15T17:00:00Z'), // 480 min = 8h
+        start: new Date(2024, 0, 15, 9, 0, 0),
+        end: new Date(2024, 0, 15, 17, 0, 0), // 480 min = 8h
       }),
     ]
-    const result = calcTimeBudget(events)
+    const result = calcTimeBudget(events, DAY)
     expect(result.committed).toBe(480)
     expect(result.available).toBe(1440)
     expect(result.free).toBe(960)
   })
 
   it('available is always 1440 minutes (24h) regardless of events', () => {
-    const result1 = calcTimeBudget([])
-    const result2 = calcTimeBudget([makeEvent({})])
+    const result1 = calcTimeBudget([], DAY)
+    const result2 = calcTimeBudget([makeEvent({})], DAY)
     expect(result1.available).toBe(1440)
     expect(result2.available).toBe(1440)
   })
@@ -103,18 +131,18 @@ describe('calcWeeklyTimeBudget', () => {
     const events = [
       makeEvent({
         id: 'mon',
-        start: new Date('2024-01-15T09:00:00Z'),
-        end: new Date('2024-01-15T11:00:00Z'), // 120 min
+        start: new Date(2024, 0, 15, 9, 0, 0),
+        end: new Date(2024, 0, 15, 11, 0, 0), // 120 min
       }),
       makeEvent({
         id: 'wed',
-        start: new Date('2024-01-17T14:00:00Z'),
-        end: new Date('2024-01-17T17:00:00Z'), // 180 min
+        start: new Date(2024, 0, 17, 14, 0, 0),
+        end: new Date(2024, 0, 17, 17, 0, 0), // 180 min
       }),
       makeEvent({
         id: 'fri',
-        start: new Date('2024-01-19T08:00:00Z'),
-        end: new Date('2024-01-19T09:00:00Z'), // 60 min
+        start: new Date(2024, 0, 19, 8, 0, 0),
+        end: new Date(2024, 0, 19, 9, 0, 0), // 60 min
       }),
     ]
     const result = calcWeeklyTimeBudget(events)
@@ -125,7 +153,7 @@ describe('calcWeeklyTimeBudget', () => {
 
   it('shows negative free when weekly committed exceeds 10080 min (overcommitted)', () => {
     // 169 hours = 10140 min > 10080 available (24h × 7)
-    const BASE = new Date('2024-01-15T00:00:00Z').getTime()
+    const BASE = new Date(2024, 0, 15, 0, 0, 0).getTime()
     const events = Array.from({ length: 169 }, (_, i) => {
       const start = new Date(BASE + i * 3600000)
       const end = new Date(BASE + (i + 1) * 3600000)

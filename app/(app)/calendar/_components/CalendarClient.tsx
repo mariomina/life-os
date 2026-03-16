@@ -22,6 +22,8 @@ import {
   subMonths,
   subYears,
   startOfWeek,
+  startOfDay,
+  isSameDay,
   eachDayOfInterval,
   endOfWeek,
   isToday,
@@ -40,8 +42,10 @@ import {
 } from '@/lib/calendar/calendar-utils'
 import { NewActivityModal } from './NewActivityModal'
 import { EditActivityModal } from './EditActivityModal'
+import { CloseJournalPanel } from './CloseJournalPanel'
 import { CalendarSidebar } from './CalendarSidebar'
 import { createSupabaseBrowserClient } from '@/lib/supabase/client'
+import { track } from '@/lib/analytics/track'
 import type { Skill } from '@/lib/db/schema/skills'
 import type { Calendar } from '@/lib/db/queries/calendars'
 import type { Holiday } from '@/lib/db/queries/holidays'
@@ -197,10 +201,14 @@ function getEventColorStyle(calendarColor: string | undefined): React.CSSPropert
 const AVAILABLE_MINUTES = 24 * 60 // 24h = 1440 min (daily)
 const AVAILABLE_WEEKLY_MINUTES = 24 * 60 * 7 // 24h × 7 days = 10080 min (weekly)
 
-export function calcTimeBudget(events: ICalendarEvent[]) {
+export function calcTimeBudget(events: ICalendarEvent[], day: Date) {
+  const dayStart = startOfDay(day).getTime()
+  const dayEnd = dayStart + 24 * 60 * 60 * 1000
   const committed = events.reduce((acc, e) => {
     if (e.isAllDay) return acc
-    return acc + (e.end.getTime() - e.start.getTime()) / 60000
+    const clampedStart = Math.max(e.start.getTime(), dayStart)
+    const clampedEnd = Math.min(e.end.getTime(), dayEnd)
+    return acc + Math.max(0, clampedEnd - clampedStart) / 60000
   }, 0)
   return {
     committed,
@@ -252,8 +260,8 @@ function formatDuration(minutes: number): string {
 
 // ─── Time Budget Panel (AC4) ───────────────────────────────────────────────────
 
-function TimeBudgetPanel({ events }: { events: ICalendarEvent[] }) {
-  const { committed, free } = calcTimeBudget(events)
+function TimeBudgetPanel({ events, day }: { events: ICalendarEvent[]; day: Date }) {
+  const { committed, free } = calcTimeBudget(events, day)
   const isOvercommitted = free < 0
 
   return (
@@ -488,13 +496,15 @@ function WeekView({
   onEventClick,
   onEventDrop,
   holidays = [],
+  dimEventId = '',
 }: {
   currentDate: Date
   events: ICalendarEvent[]
   onSlotClick: (day: Date, hour: number) => void
   onEventClick: (evt: ICalendarEvent, day: Date, totalDayEvents: number) => void
-  onEventDrop: (eventId: string, day: Date, hour: number) => void
+  onEventDrop: (eventId: string, day: Date, hour: number, minutes?: number) => void
   holidays?: Holiday[]
+  dimEventId?: string
 }) {
   const [dragOver, setDragOver] = useState<{ dayKey: string; hour: number } | null>(null)
   const weekJustDropped = useRef(false)
@@ -613,7 +623,10 @@ function WeekView({
                       weekJustDropped.current = false
                     }, 300)
                     const eventId = e.dataTransfer.getData('text/plain')
-                    if (eventId) onEventDrop(eventId, day, hour.getHours())
+                    if (eventId) {
+                      const mins = e.nativeEvent.offsetY >= ROW_H / 2 ? 30 : 0
+                      onEventDrop(eventId, day, hour.getHours(), mins)
+                    }
                     setDragOver(null)
                   }}
                 />
@@ -626,7 +639,10 @@ function WeekView({
         <div className="absolute inset-0 grid grid-cols-8 pointer-events-none">
           <div /> {/* time gutter spacer */}
           {weekDays.map((day) => {
-            const dayEvents = getEventsForDay(events, day).filter((e) => !e.isAllDay)
+            // WeekView: only show events that START on this day (adjacent column shows the full event)
+            const dayEvents = getEventsForDay(events, day).filter(
+              (e) => !e.isAllDay && isSameDay(e.start, day)
+            )
             return (
               <div
                 key={day.toISOString()}
@@ -650,7 +666,7 @@ function WeekView({
                       onDragEnd={() => setDragOver(null)}
                       className={`absolute left-0.5 right-0.5 rounded border-l-2 px-1 py-0.5 text-xs overflow-hidden pointer-events-auto cursor-grab active:cursor-grabbing hover:brightness-110 transition-all ${
                         hexStyle ? '' : EVENT_COLOR_CLASSES[evt.color ?? 'blue']
-                      }`}
+                      } ${evt.id === dimEventId ? 'opacity-50' : ''}`}
                       style={{ top, height, ...(hexStyle ?? {}) }}
                       onClick={(e) => {
                         e.stopPropagation()
@@ -826,12 +842,13 @@ function DayView({
   onTagSkill,
   onRemoveSkillTag,
   holidays = [],
+  dimEventId = '',
 }: {
   currentDate: Date
   events: ICalendarEvent[]
   onSlotClick: (date: Date, hour: number) => void
   onEventClick: (evt: ICalendarEvent) => void
-  onEventDrop: (eventId: string, day: Date, hour: number) => void
+  onEventDrop: (eventId: string, day: Date, hour: number, minutes?: number) => void
   onDelete: (id: string) => void
   timeTotals: Record<string, number>
   activeTimers: Map<string, TimerState>
@@ -849,13 +866,19 @@ function DayView({
   onTagSkill: (activityId: string, skillId: string) => void
   onRemoveSkillTag: (activityId: string, skillId: string) => void
   holidays?: Holiday[]
+  dimEventId?: string
 }) {
   const router = useRouter()
   const [dragOverHour, setDragOverHour] = useState<number | null>(null)
   const dayJustDropped = useRef(false)
   const hours = getDayHourSlots(currentDate, 0, 24)
   const allDayForDay = getEventsForDay(events, currentDate).filter((e) => e.isAllDay)
-  const dayEvents = getEventsForDay(events, currentDate).filter((e) => !e.isAllDay)
+  const dayEvents = getEventsForDay(events, currentDate).filter((e) => {
+    if (e.isAllDay) return false
+    // Carry-over (starts yesterday): only show if non-recurring
+    if (!isSameDay(e.start, currentDate)) return e.recurrenceGroupId == null
+    return true
+  })
   const holidayMap = new Map(holidays.map((h) => [h.date, h.name]))
   const holidayName = holidayMap.get(format(currentDate, 'yyyy-MM-dd'))
 
@@ -907,7 +930,7 @@ function DayView({
               {format(hour, 'HH:mm')}
             </div>
             <div
-              className={`flex-1 border-l border-border/50 cursor-pointer transition-colors ${dragOverHour === hour.getHours() ? 'bg-primary/15' : 'hover:bg-primary/5'}`}
+              className={`flex-1 border-l border-border/50 cursor-pointer transition-colors relative ${dragOverHour === hour.getHours() ? 'bg-primary/15' : 'hover:bg-primary/5'}`}
               onClick={() => {
                 if (dayJustDropped.current) return
                 onSlotClick(currentDate, hour.getHours())
@@ -924,20 +947,36 @@ function DayView({
                   dayJustDropped.current = false
                 }, 300)
                 const eventId = e.dataTransfer.getData('text/plain')
-                if (eventId) onEventDrop(eventId, currentDate, hour.getHours())
+                if (eventId) {
+                  // Precisión 30min: si el drop cae en la mitad inferior del slot → :30
+                  const mins = e.nativeEvent.offsetY >= ROW_H / 2 ? 30 : 0
+                  onEventDrop(eventId, currentDate, hour.getHours(), mins)
+                }
                 setDragOverHour(null)
               }}
-            />
+            >
+              {/* Línea de :30 para guía visual */}
+              <div
+                className="absolute left-0 right-0 border-b border-dashed border-border/30"
+                style={{ top: '50%' }}
+              />
+            </div>
           </div>
         ))}
 
         {/* Events overlay — absolutely positioned, span full duration */}
         <div className="absolute left-16 right-0 top-0 bottom-0 pointer-events-none">
           {(() => {
-            const layout = layoutEvents(dayEvents)
+            // Clamp carry-over events (start = yesterday) to day boundary for layout
+            const clippedForLayout = dayEvents.map((e) =>
+              isSameDay(e.start, currentDate) ? e : { ...e, start: startOfDay(currentDate) }
+            )
+            const layout = layoutEvents(clippedForLayout)
             return dayEvents.map((evt) => {
-              const startH = evt.start.getHours() + evt.start.getMinutes() / 60
-              const durationH = (evt.end.getTime() - evt.start.getTime()) / 3600000
+              const isCarryOver = !isSameDay(evt.start, currentDate)
+              const effectiveStart = isCarryOver ? startOfDay(currentDate) : evt.start
+              const startH = isCarryOver ? 0 : evt.start.getHours() + evt.start.getMinutes() / 60
+              const durationH = (evt.end.getTime() - effectiveStart.getTime()) / 3600000
               const top = startH * ROW_H
               // Mínimo 14px (= 1 línea de texto) — eventos de 15min terminan exactamente
               // donde empieza el siguiente, sin overlap visual
@@ -973,7 +1012,7 @@ function DayView({
                     e.stopPropagation()
                   }}
                   onDragEnd={() => setDragOverHour(null)}
-                  className={`absolute text-sm rounded border-l-2 px-2 py-1 overflow-hidden pointer-events-auto cursor-grab active:cursor-grabbing hover:brightness-105 transition-all ${hexStyle ? '' : EVENT_COLOR_CLASSES[evt.color ?? 'blue']}`}
+                  className={`absolute text-sm rounded border-l-2 px-2 py-1 overflow-hidden pointer-events-auto cursor-grab active:cursor-grabbing hover:brightness-105 transition-all ${hexStyle ? '' : EVENT_COLOR_CLASSES[evt.color ?? 'blue']} ${isCarryOver ? 'border-t-0 rounded-tl-none rounded-tr-none' : ''} ${evt.id === dimEventId ? 'opacity-50' : ''}`}
                   style={{
                     top,
                     height,
@@ -987,6 +1026,9 @@ function DayView({
                     onEventClick(evt)
                   }}
                 >
+                  {isCarryOver && (
+                    <div className="text-[10px] opacity-50 leading-none mb-0.5">◀ desde ayer</div>
+                  )}
                   <div className="leading-tight">
                     <div className="flex items-center gap-1.5">
                       <span className="font-medium truncate text-sm">{evt.title}</span>
@@ -1248,6 +1290,24 @@ export function CalendarClient({
   const [clickedSlot, setClickedSlot] = useState<Date | null>(null)
   // Story 10.9 — selected event to edit/delete
   const [selectedEvent, setSelectedEvent] = useState<ICalendarEvent | null>(null)
+  // Cascade push — pending confirmation after editing expands an event into following ones
+  const [pendingCascade, setPendingCascade] = useState<{
+    eventsToShift: ICalendarEvent[]
+    deltaMs: number
+    overlapCount: number
+  } | null>(null)
+  // DnD scope — pending confirmation when dropping a recurring event
+  const [pendingDrop, setPendingDrop] = useState<{
+    eventId: string
+    recurrenceGroupId: string
+    targetDay: Date
+    targetHour: number
+    targetMinutes: number
+  } | null>(null)
+  // Story 10.18 — Close Journal: show untracked gap panel at close-of-day threshold
+  const [showCloseJournal, setShowCloseJournal] = useState(false)
+  // Gap registration: slot + duration for NewActivityModal pre-fill
+  const [gapSlot, setGapSlot] = useState<{ date: Date; duration: number } | null>(null)
 
   // Story 10.2 AC3 — hidden calendars filter (state lives here, set by CalendarSidebar)
   const [hiddenCalendarIds, setHiddenCalendarIds] = useState<Set<string>>(new Set())
@@ -1263,16 +1323,33 @@ export function CalendarClient({
     holidayCalendar && hiddenCalendarIds.has(holidayCalendar.id) ? [] : (holidays ?? [])
 
   const handleVisibilityChange = useCallback((hidden: Set<string>) => {
+    track('calendar_toggle', { hiddenCount: hidden.size })
     setHiddenCalendarIds(new Set(hidden))
   }, [])
 
-  // Story 10.4 — click on an empty grid slot to open the modal with that date+hour
-  const handleSlotClick = useCallback((date: Date, hour: number) => {
-    const slot = new Date(date)
-    slot.setHours(hour, 0, 0, 0)
-    setClickedSlot(slot)
-    setIsModalOpen(true)
+  const handleDismissCloseJournal = useCallback(() => {
+    try {
+      const dismissKey = `closeJournalDismissed-${format(new Date(), 'yyyy-MM-dd')}`
+      localStorage.setItem(dismissKey, '1')
+    } catch {}
+    setShowCloseJournal(false)
   }, [])
+
+  const handleRegisterGap = useCallback((gapDate: Date, durationMin: number) => {
+    setGapSlot({ date: gapDate, duration: durationMin })
+  }, [])
+
+  // Story 10.4 — click on an empty grid slot to open the modal with that date+hour
+  const handleSlotClick = useCallback(
+    (date: Date, hour: number) => {
+      track('slot_click', { hour, view })
+      const slot = new Date(date)
+      slot.setHours(hour, 0, 0, 0)
+      setClickedSlot(slot)
+      setIsModalOpen(true)
+    },
+    [view]
+  )
 
   // MonthView: click on a day cell → open new activity modal at 8:00
   const handleMonthSlotClick = useCallback((date: Date) => {
@@ -1301,17 +1378,33 @@ export function CalendarClient({
     []
   )
 
-  // Story 10.11 — Drag & Drop: move an activity to a new day/hour
+  // Story 10.11 — Drag & Drop: move an activity to a new day/hour (30-min precision)
+  // Story 10.16 — recurring events show scope popup before committing the move
   const handleDropEvent = useCallback(
-    async (eventId: string, targetDay: Date, targetHour: number) => {
+    async (eventId: string, targetDay: Date, targetHour: number, targetMinutes = 0) => {
       const evt = visibleEvents.find((e) => e.id === eventId)
       if (!evt) return
+
+      // Recurring → show scope popup; caller waits for user choice
+      if (evt.recurrenceGroupId) {
+        setPendingDrop({
+          eventId,
+          recurrenceGroupId: evt.recurrenceGroupId,
+          targetDay,
+          targetHour,
+          targetMinutes,
+        })
+        return
+      }
+
+      // Non-recurring → move directly (original behavior)
+      track('event_drop', { hasRecurrence: false, targetHour })
       const { updateActivity } = await import('@/actions/calendar')
       await updateActivity(eventId, {
         title: evt.title,
         description: evt.description ?? null,
         date: format(targetDay, 'yyyy-MM-dd'),
-        time: `${String(targetHour).padStart(2, '0')}:00`,
+        time: `${String(targetHour).padStart(2, '0')}:${String(targetMinutes).padStart(2, '0')}`,
         duration: Math.round((evt.end.getTime() - evt.start.getTime()) / 60000),
         areaId: evt.areaId ?? null,
         calendarId: evt.calendarId ?? null,
@@ -1320,6 +1413,84 @@ export function CalendarClient({
     },
     [visibleEvents, router]
   )
+
+  // Cascade push: called after EditActivityModal saves a single activity
+  const handleEventSaved = useCallback(
+    (eventId: string, newDate: string, newTime: string, newDuration: number) => {
+      const edited = visibleEvents.find((e) => e.id === eventId)
+      if (!edited) {
+        router.refresh()
+        return
+      }
+      track('event_save', { hasOverlap: false }) // overlap check below; updated if found
+
+      // Compute new end time (use local-time constructor, not ISO string parse)
+      const [h, m] = newTime.split(':').map(Number)
+      const [y, mo, d] = newDate.split('-').map(Number)
+      const newStart = new Date(y, mo - 1, d, h, m, 0, 0)
+      const newEnd = new Date(newStart.getTime() + newDuration * 60000)
+      const oldEnd = edited.end
+      const deltaMs = newEnd.getTime() - oldEnd.getTime()
+
+      if (deltaMs <= 0) {
+        router.refresh()
+        return
+      } // shorter or same — no cascade
+
+      // Boundaries of the calendar day that contains oldEnd
+      const dayStart = startOfDay(oldEnd).getTime()
+      const dayEnd = dayStart + 24 * 60 * 60 * 1000
+
+      // Only include non-recurring, non-all-day events that:
+      // 1. START on the same calendar day as oldEnd (strict: use start timestamp, not end)
+      // 2. Start at or after oldEnd
+      // Exclude events with any recurrenceGroupId value (null, undefined, or string)
+      const eventsToShift = visibleEvents.filter((e) => {
+        if (e.id === eventId) return false
+        if (e.isAllDay) return false
+        if (e.recurrenceGroupId != null) return false // skip ALL recurring events
+        if (e.start.getTime() < oldEnd.getTime()) return false // starts before old end
+        if (e.start.getTime() < dayStart) return false // starts on a previous day
+        if (e.start.getTime() >= dayEnd) return false // starts on a following day
+        return true
+      })
+
+      const overlapping = eventsToShift.filter((e) => e.start.getTime() < newEnd.getTime())
+
+      if (overlapping.length === 0) {
+        router.refresh()
+        return
+      }
+
+      // Show cascade dialog
+      setPendingCascade({ eventsToShift, deltaMs, overlapCount: overlapping.length })
+    },
+    [visibleEvents, router]
+  )
+
+  const executeCascade = useCallback(async () => {
+    if (!pendingCascade) return
+    track('cascade_confirm', {
+      shiftedCount: pendingCascade.eventsToShift.length,
+      deltaMinutes: Math.round(pendingCascade.deltaMs / 60000),
+    })
+    const { updateActivity } = await import('@/actions/calendar')
+    for (const evt of pendingCascade.eventsToShift) {
+      const newStart = new Date(evt.start.getTime() + pendingCascade.deltaMs)
+      const duration = Math.round((evt.end.getTime() - evt.start.getTime()) / 60000)
+      await updateActivity(evt.id, {
+        title: evt.title,
+        description: evt.description ?? null,
+        date: format(newStart, 'yyyy-MM-dd'),
+        time: format(newStart, 'HH:mm'),
+        duration,
+        areaId: evt.areaId ?? null,
+        calendarId: evt.calendarId ?? null,
+      })
+    }
+    setPendingCascade(null)
+    router.refresh()
+  }, [pendingCascade, router])
 
   // Timer state: Map<activityId, TimerState> — initialized from server-side active timers
   const [activeTimers, setActiveTimers] = useState<Map<string, TimerState>>(
@@ -1348,6 +1519,26 @@ export function CalendarClient({
 
   // Story 7.2 — Skill tags per activity (activityId → skillId[])
   const [skillTags, setSkillTags] = useState<Record<string, string[]>>(() => initialSkillTags)
+
+  // Story 10.19 — session_start: track once per page mount
+  useEffect(() => {
+    track('session_start', { view: defaultView, hour: new Date().getHours() })
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Story 10.18 — Close Journal: check threshold at mount (once per page session)
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('closeJournalHour') ?? '21:30'
+      const [h, m] = stored.split(':').map(Number)
+      const thresholdMin = isNaN(h) || isNaN(m) ? 21 * 60 + 30 : h * 60 + m
+      const now = new Date()
+      const nowMin = now.getHours() * 60 + now.getMinutes()
+      const dismissKey = `closeJournalDismissed-${format(now, 'yyyy-MM-dd')}`
+      if (nowMin >= thresholdMin && !localStorage.getItem(dismissKey)) {
+        setShowCloseJournal(true)
+      }
+    } catch {}
+  }, [])
 
   // Story 5.9 — AC1: Live clock — setInterval every 1s while any non-paused timer runs
   useEffect(() => {
@@ -1464,6 +1655,8 @@ export function CalendarClient({
   }
 
   function handleDelete(activityId: string) {
+    const evt = visibleEvents.find((e) => e.id === activityId)
+    track('event_delete', { hasRecurrence: !!evt?.recurrenceGroupId })
     // deleteActivity is a Server Action — called via startTransition in an inline async
     import('@/actions/calendar').then(({ deleteActivity }) => {
       deleteActivity(activityId).then((result) => {
@@ -1475,6 +1668,7 @@ export function CalendarClient({
   // ─── Timer handlers (Story 5.8) ─────────────────────────────────────────────
 
   function handleStartTimer(activityId: string) {
+    track('timer_start', { activityId })
     import('@/actions/timer').then(({ startTimer }) => {
       startTimer(activityId).then((result) => {
         if (result.error) {
@@ -1492,6 +1686,11 @@ export function CalendarClient({
   }
 
   function handleStopTimer(activityId: string, entryId: string) {
+    const startedAt = timerStartedAt.get(activityId)
+    const durationSeconds = startedAt
+      ? Math.round((Date.now() - startedAt.getTime()) / 1000)
+      : undefined
+    track('timer_stop', { activityId, durationSeconds })
     import('@/actions/timer').then(({ stopTimer }) => {
       stopTimer(entryId).then((result) => {
         if (result.error) {
@@ -1636,7 +1835,10 @@ export function CalendarClient({
               {AVAILABLE_VIEWS.map((v) => (
                 <button
                   key={v}
-                  onClick={() => setView(v)}
+                  onClick={() => {
+                    track('view_change', { from: view, to: v })
+                    setView(v)
+                  }}
                   className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
                     view === v
                       ? 'bg-primary text-primary-foreground'
@@ -1651,7 +1853,7 @@ export function CalendarClient({
         </div>
 
         {/* Time Budget panel — only in Day view (AC4 Story 5.2) */}
-        {view === 'day' && <TimeBudgetPanel events={currentDayEvents} />}
+        {view === 'day' && <TimeBudgetPanel events={currentDayEvents} day={currentDate} />}
 
         {/* Weekly Time Budget panel — only in Week view (AC3 Story 5.3) */}
         {view === 'week' && <WeeklyTimeBudgetPanel events={currentWeekEvents} />}
@@ -1666,6 +1868,7 @@ export function CalendarClient({
               onEventClick={handleWeekEventClick}
               onEventDrop={handleDropEvent}
               holidays={visibleHolidays}
+              dimEventId={pendingDrop?.eventId}
             />
           )}
           {view === 'month' && (
@@ -1698,6 +1901,7 @@ export function CalendarClient({
               onTagSkill={handleTagSkill}
               onRemoveSkillTag={handleRemoveSkillTag}
               holidays={visibleHolidays}
+              dimEventId={pendingDrop?.eventId}
             />
           )}
           {view === 'year' && (
@@ -1716,6 +1920,16 @@ export function CalendarClient({
               onEventClick={handleEventClick}
             />
           )}
+
+          {/* Story 10.18 — Close Journal Panel (sticky bottom) */}
+          {showCloseJournal && isToday(currentDate) && (
+            <CloseJournalPanel
+              events={visibleEvents}
+              date={currentDate}
+              onDismiss={handleDismissCloseJournal}
+              onRegisterGap={handleRegisterGap}
+            />
+          )}
         </div>
 
         {/* New Activity Modal (AC1, AC2 Story 5.7 / Story 10.4)
@@ -1732,13 +1946,135 @@ export function CalendarClient({
           />
         )}
 
+        {/* Gap Registration Modal (Story 10.18 — opened from CloseJournalPanel) */}
+        {gapSlot && (
+          <NewActivityModal
+            onClose={() => {
+              setGapSlot(null)
+              router.refresh()
+            }}
+            defaultDate={gapSlot.date}
+            defaultDuration={gapSlot.duration}
+            calendars={calendars}
+            initialMode="log"
+          />
+        )}
+
         {/* Edit Activity Modal (Story 10.9) */}
         {selectedEvent && (
           <EditActivityModal
             event={selectedEvent}
             onClose={() => setSelectedEvent(null)}
+            onSaved={handleEventSaved}
             calendars={calendars}
           />
+        )}
+
+        {/* DnD scope dialog — recurring events: "Solo hoy" vs "Toda la serie" */}
+        {pendingDrop &&
+          (() => {
+            const dropEvt = visibleEvents.find((e) => e.id === pendingDrop.eventId)
+            const dropTitle = dropEvt?.title ?? 'la actividad'
+            const newTime = `${String(pendingDrop.targetHour).padStart(2, '0')}:${String(pendingDrop.targetMinutes).padStart(2, '0')}`
+            const dropDuration = dropEvt
+              ? Math.round((dropEvt.end.getTime() - dropEvt.start.getTime()) / 60000)
+              : 30
+            return (
+              <div
+                className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+                onClick={() => setPendingDrop(null)}
+              >
+                <div
+                  className="bg-background border border-border rounded-xl p-5 max-w-xs w-full mx-4 shadow-2xl flex flex-col gap-1"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <p className="text-sm font-semibold mb-2">Mover &quot;{dropTitle}&quot;</p>
+                  <div className="h-px bg-border mb-1" />
+                  <button
+                    className="text-left text-sm px-3 py-2 rounded-md hover:bg-muted transition-colors"
+                    onClick={async () => {
+                      track('event_drop', {
+                        hasRecurrence: true,
+                        scope: 'single',
+                        targetHour: pendingDrop.targetHour,
+                      })
+                      const { updateActivity } = await import('@/actions/calendar')
+                      await updateActivity(pendingDrop.eventId, {
+                        title: dropEvt?.title ?? '',
+                        description: dropEvt?.description ?? null,
+                        date: format(pendingDrop.targetDay, 'yyyy-MM-dd'),
+                        time: newTime,
+                        duration: dropDuration,
+                        areaId: dropEvt?.areaId ?? null,
+                        calendarId: dropEvt?.calendarId ?? null,
+                      })
+                      setPendingDrop(null)
+                      router.refresh()
+                    }}
+                  >
+                    Solo hoy
+                  </button>
+                  <button
+                    className="text-left text-sm px-3 py-2 rounded-md hover:bg-muted transition-colors"
+                    onClick={async () => {
+                      track('event_drop', {
+                        hasRecurrence: true,
+                        scope: 'all',
+                        targetHour: pendingDrop.targetHour,
+                      })
+                      const { updateGroupScheduleTime } = await import('@/actions/calendar')
+                      await updateGroupScheduleTime(
+                        pendingDrop.recurrenceGroupId,
+                        newTime,
+                        dropDuration
+                      )
+                      setPendingDrop(null)
+                      router.refresh()
+                    }}
+                  >
+                    Toda la serie
+                  </button>
+                  <button
+                    className="text-left text-sm px-3 py-2 rounded-md hover:bg-muted transition-colors text-muted-foreground"
+                    onClick={() => setPendingDrop(null)}
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            )
+          })()}
+
+        {/* Cascade push dialog */}
+        {pendingCascade && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+            <div className="bg-background border border-border rounded-xl p-5 max-w-sm w-full mx-4 shadow-2xl">
+              <p className="text-sm font-semibold mb-1">Solapamiento detectado</p>
+              <p className="text-sm text-muted-foreground mb-4">
+                {pendingCascade.overlapCount === 1
+                  ? '1 actividad se solapa con el nuevo horario.'
+                  : `${pendingCascade.overlapCount} actividades se solapan con el nuevo horario.`}{' '}
+                ¿Deseas recorrerlas hacia adelante?
+              </p>
+              <div className="flex gap-2 justify-end">
+                <button
+                  onClick={() => {
+                    setPendingCascade(null)
+                    router.refresh()
+                  }}
+                  className="px-3 py-1.5 text-sm rounded-md border border-border hover:bg-muted transition-colors"
+                >
+                  No, guardar igual
+                </button>
+                <button
+                  onClick={executeCascade}
+                  className="px-3 py-1.5 text-sm rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
+                >
+                  Sí, recorrer
+                </button>
+              </div>
+            </div>
+          </div>
         )}
       </div>
     </div>

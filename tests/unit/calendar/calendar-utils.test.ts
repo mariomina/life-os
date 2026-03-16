@@ -11,6 +11,8 @@ import {
   getEventsForDay,
   getEventsForRange,
   formatTimeUTC,
+  detectDayGaps,
+  type ICalendarEvent,
 } from '@/lib/calendar/calendar-utils'
 
 // ─── toCalendarEvent ──────────────────────────────────────────────────────────
@@ -291,5 +293,85 @@ describe('formatTimeUTC', () => {
   it('pads single digit hours', () => {
     const date = new Date('2024-01-15T09:05:00Z')
     expect(formatTimeUTC(date)).toBe('09:05')
+  })
+})
+
+// ─── detectDayGaps ─────────────────────────────────────────────────────────────
+
+function makeEvent(
+  id: string,
+  startH: number,
+  startM: number,
+  endH: number,
+  endM: number
+): ICalendarEvent {
+  const DAY = new Date(2024, 0, 15)
+  return {
+    id,
+    title: `Event ${id}`,
+    start: new Date(2024, 0, 15, startH, startM, 0),
+    end: new Date(2024, 0, 15, endH, endM, 0),
+    color: 'blue',
+    isAllDay: false,
+  }
+}
+
+describe('detectDayGaps', () => {
+  const DAY = new Date(2024, 0, 15)
+  const THRESHOLD = 21 * 60 + 30 // 21:30
+
+  it('returns one big gap when no events exist', () => {
+    const gaps = detectDayGaps([], DAY, 5, THRESHOLD)
+    expect(gaps).toHaveLength(1)
+    expect(gaps[0]).toEqual({ from: 0, to: THRESHOLD, durationMin: THRESHOLD })
+  })
+
+  it('returns empty array when events cover up to threshold', () => {
+    const events = [makeEvent('1', 0, 0, 21, 30)]
+    const gaps = detectDayGaps(events, DAY, 5, THRESHOLD)
+    expect(gaps).toHaveLength(0)
+  })
+
+  it('detects a gap between two events', () => {
+    const events = [makeEvent('1', 9, 0, 10, 0), makeEvent('2', 11, 0, 12, 0)]
+    const gaps = detectDayGaps(events, DAY, 5, THRESHOLD)
+    // Gap: 0–540 (9h), 600–660 (10–11), 720–1290 (12–21:30)
+    const gapBetween = gaps.find((g) => g.from === 600)
+    expect(gapBetween).toBeDefined()
+    expect(gapBetween?.durationMin).toBe(60)
+  })
+
+  it('ignores gaps smaller than minGapMinutes', () => {
+    // event 09:00–09:03, next event 09:04 — gap = 1 min < 5 min default
+    const events = [makeEvent('1', 9, 0, 9, 3), makeEvent('2', 9, 4, 10, 0)]
+    const gaps = detectDayGaps(events, DAY, 5, THRESHOLD)
+    const tinyGap = gaps.find((g) => g.from === 9 * 60 + 3)
+    expect(tinyGap).toBeUndefined()
+  })
+
+  it('handles multiple gaps correctly', () => {
+    const events = [
+      makeEvent('1', 8, 0, 9, 0),
+      makeEvent('2', 10, 0, 11, 0),
+      makeEvent('3', 14, 0, 15, 0),
+    ]
+    const gaps = detectDayGaps(events, DAY, 5, THRESHOLD)
+    // Expected gaps: 0–480, 540–600, 660–840, 900–1290
+    expect(gaps.length).toBeGreaterThanOrEqual(4)
+  })
+
+  it('ignores all-day events', () => {
+    const allDay: ICalendarEvent = {
+      id: 'ad',
+      title: 'Holiday',
+      start: new Date(2024, 0, 15, 0, 0),
+      end: new Date(2024, 0, 16, 0, 0),
+      color: 'blue',
+      isAllDay: true,
+    }
+    const gaps = detectDayGaps([allDay], DAY, 5, THRESHOLD)
+    // All-day event should not affect gap detection
+    expect(gaps).toHaveLength(1)
+    expect(gaps[0].from).toBe(0)
   })
 })
