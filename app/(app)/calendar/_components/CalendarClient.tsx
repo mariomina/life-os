@@ -1752,6 +1752,7 @@ export function CalendarClient({
   // ─── Skill tag handlers (Story 7.2) ─────────────────────────────────────────
 
   function handleTagSkill(activityId: string, skillId: string) {
+    track('skill_tag', { activityId, skillId })
     import('@/actions/skills').then(({ tagActivityWithSkill }) => {
       tagActivityWithSkill(activityId, skillId).then((result) => {
         if (result.success) {

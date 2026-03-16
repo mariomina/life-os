@@ -4,10 +4,11 @@
 // Story 10.18 — Diario de Cierre: muestra gaps de tiempo sin trackear del día actual.
 // Se muestra cuando la hora actual >= umbral configurado (default 21:30).
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { format } from 'date-fns'
 import { Moon, X } from 'lucide-react'
 import { detectDayGaps, type DayGap, type ICalendarEvent } from '@/lib/calendar/calendar-utils'
+import { track } from '@/lib/analytics/track'
 
 // ─── localStorage helpers ─────────────────────────────────────────────────────
 
@@ -82,8 +83,14 @@ export function CloseJournalPanel({
 
   const totalUntracked = gaps.reduce((acc, g) => acc + g.durationMin, 0)
 
+  // Story 10.19 — gap_panel_shown: track once when panel becomes visible
+  useEffect(() => {
+    track('gap_panel_shown', { gapCount: gaps.length, totalUntrackedMin: totalUntracked })
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleRegister = useCallback(
     (gap: DayGap) => {
+      track('gap_registered', { durationMin: gap.durationMin, fromMin: gap.from })
       const gapDate = new Date(date)
       gapDate.setHours(Math.floor(gap.from / 60), gap.from % 60, 0, 0)
       onRegisterGap(gapDate, gap.durationMin)
