@@ -2,7 +2,7 @@
 
 > **Generado por:** Atlas (Analyst Agent) — YOLO Mode
 > **Fecha:** 2026-02-18
-> **Estado:** Draft v1.8 — Modelo AIOS (Proyectos→Workflows→Tasks→Steps=Activities) + Templates + Squads + Visual Builder (React Flow) + Testing Stack (Vitest+RTL)
+> **Estado:** Draft v1.5 — Correlaciones + Multi-IA + Perfil científico + KR automático + IA en Inbox
 
 ---
 
@@ -12,7 +12,7 @@
 
 El sistema organiza la vida en una jerarquía descendente: Áreas de vida (eternas) → OKRs (5 años, anual, trimestral) → Proyectos / Hábitos / Sprints → Calendario de ejecución diaria. Todo lo que entra al calendario **se hace** — convirtiendo objetivos abiertos en objetivos cumplidos. El Inbox actúa como zona de aterrizaje para todo lo que está en la cabeza, donde un agente IA detecta tiempo disponible en el calendario y calendariza con 1 click.
 
-El motor de **detección de correlaciones** es una pieza central desde el inicio: el sistema identifica automáticamente qué actividades, proyectos y hábitos potencian o dañan el enfoque del usuario — cerrando el loop entre ejecución y optimización del sistema. La arquitectura de IA es **agnóstica de proveedor** (Claude, OpenAI, Gemini, u otros) — sin vendor lock-in.
+El motor de **detección de correlaciones** es una pieza central desde el inicio: el sistema identifica automáticamente qué actividades, proyectos y hábitos se correlacionan y influyen en 1 o varias areas — cerrando el loop entre ejecución y optimización del sistema. La arquitectura de IA es **agnóstica de proveedor** (Claude, OpenAI, Gemini, u otros) — sin vendor lock-in.
 
 El producto resuelve un problema profundamente personal: **la dificultad de ser consistente** — no por falta de conocimiento o motivación, sino por ausencia de un sistema que cierre el gap entre la intención estratégica y la ejecución diaria, y que además aprenda de los patrones del usuario para optimizarse.
 
@@ -38,14 +38,14 @@ El resultado: planificación que no aterriza en acción, acción que no conecta 
 
 ### Por Qué las Soluciones Existentes Fallan
 
-| Solución           | Limitación crítica                                                 |
-| ------------------ | ------------------------------------------------------------------ |
-| Google Calendar    | Sin contexto de áreas, OKRs ni hábitos. Solo eventos.              |
-| Notion             | Sin calendario real, sin time tracking, sin lógica de priorización |
-| Todoist / Things   | Task managers sin jerarquía de vida ni calendario tipo Google      |
-| Habitica / Streaks | Solo hábitos, sin conexión a objetivos estratégicos                |
-| Toggl / Clockify   | Time tracking puro, sin planificación                              |
-| Linear / Jira      | Orientado a equipos, no a vida personal multidimensional           |
+| Solución | Limitación crítica |
+|----------|-------------------|
+| Google Calendar | Sin contexto de áreas, OKRs ni hábitos. Solo eventos. |
+| Notion | Sin calendario real, sin time tracking, sin lógica de priorización |
+| Todoist / Things | Task managers sin jerarquía de vida ni calendario tipo Google |
+| Habitica / Streaks | Solo hábitos, sin conexión a objetivos estratégicos |
+| Toggl / Clockify | Time tracking puro, sin planificación |
+| Linear / Jira | Orientado a equipos, no a vida personal multidimensional |
 
 **El gap:** Ninguna herramienta conecta la pirámide completa Áreas → OKRs → Proyectos/Hábitos → Calendario → Ejecución → Correlaciones → Informes en un solo sistema coherente que aprenda del usuario.
 
@@ -224,21 +224,18 @@ El Inbox no es solo un GTD capture — es el punto de entrada donde la IA aplica
 ### Primary User Segment: Mario (el creador)
 
 **Perfil:**
-
 - Desarrollador técnico con pensamiento sistémico
 - Familiarizado con los 11 frameworks integrados
 - Historial de intentar múltiples herramientas sin encontrar coherencia entre ellas
 - Problema específico: conoce la teoría, falla en la consistencia de aplicación
 
 **Comportamiento actual:**
-
 - Planifica estratégicamente pero el plan no aterriza en el calendario con regularidad
 - El inbox mental no tiene sistema de procesamiento formal
 - El tiempo se va sin evidencia de cuánto fue a qué área/proyecto
 - No tiene diagnóstico claro del estado actual de cada área de vida
 
 **Necesidades:**
-
 - Un diagnóstico objetivo de dónde está su sistema de vida ahora
 - Un lugar donde volcar todo lo que está en la mente sin perderlo
 - IA que procese el inbox y calendarice sin fricción
@@ -248,7 +245,7 @@ El Inbox no es solo un GTD capture — es el punto de entrada donde la IA aplica
 
 ### Secondary User Segment: Potencial futuro
 
-_Post-MVP: otros individuos con pensamiento sistémico que buscan un OS de vida integrado, no apps parciales._
+*Post-MVP: otros individuos con pensamiento sistémico que buscan un OS de vida integrado, no apps parciales.*
 
 ---
 
@@ -289,7 +286,6 @@ _Post-MVP: otros individuos con pensamiento sistémico que buscan un OS de vida 
 El sistema necesita saber el estado actual del usuario antes de planificar. Dos vías de onboarding equivalentes:
 
 **Vía A — Archivos psicométricos:**
-
 ```
 Archivos de entrada:
 - Enneagrama (tipo de personalidad, motivaciones, miedos)
@@ -299,26 +295,24 @@ Archivos de entrada:
 - Principios fundamentales (valores, compromisos personales)
 - [otros tests ~5 más]
 ```
-
 El usuario sube/pega el contenido. La IA procesa y genera diagnóstico.
 
 **Vía B — Cuestionario de diagnóstico científico:**
 
 Si el usuario no tiene archivos, el sistema aplica un cuestionario por área con **preguntas científicamente validadas y específicas** para cada dimensión Maslow:
 
-| Área Maslow                               | Base científica del cuestionario                                 |
-| ----------------------------------------- | ---------------------------------------------------------------- |
-| Fisiológica (salud, sueño, nutrición)     | Pittsburgh Sleep Quality Index (PSQI), IPAQ actividad física     |
-| Seguridad (economía, vivienda, empleo)    | Financial Wellbeing Scale (FWBs), evaluación estabilidad laboral |
-| Conexión social (relaciones, pertenencia) | UCLA Loneliness Scale, Social Connectedness Scale                |
-| Reconocimiento (autoestima, logros)       | Rosenberg Self-Esteem Scale (RSES)                               |
-| Cognitiva (aprendizaje, creatividad)      | Need for Cognition Scale (NCS)                                   |
-| Estética (orden, belleza, entorno)        | Aesthetic Sensitivity Scale                                      |
-| Autorrealización (propósito, crecimiento) | Meaning in Life Questionnaire (MLQ), Flourishing Scale           |
-| Trascendencia (contribución, legado)      | Purpose in Life Test (PIL)                                       |
+| Área Maslow | Base científica del cuestionario |
+|-------------|----------------------------------|
+| Fisiológica (salud, sueño, nutrición) | Pittsburgh Sleep Quality Index (PSQI), IPAQ actividad física |
+| Seguridad (economía, vivienda, empleo) | Financial Wellbeing Scale (FWBs), evaluación estabilidad laboral |
+| Conexión social (relaciones, pertenencia) | UCLA Loneliness Scale, Social Connectedness Scale |
+| Reconocimiento (autoestima, logros) | Rosenberg Self-Esteem Scale (RSES) |
+| Cognitiva (aprendizaje, creatividad) | Need for Cognition Scale (NCS) |
+| Estética (orden, belleza, entorno) | Aesthetic Sensitivity Scale |
+| Autorrealización (propósito, crecimiento) | Meaning in Life Questionnaire (MLQ), Flourishing Scale |
+| Trascendencia (contribución, legado) | Purpose in Life Test (PIL) |
 
 **Output del diagnóstico (ambas vías):**
-
 - **Score por área: 0-100%** (estado actual de cada dimensión Maslow)
 - **Life System Health: 0-100%** (score global ponderado)
 - 3-5 hábitos recomendados según diagnóstico
@@ -327,65 +321,14 @@ Si el usuario no tiene archivos, el sistema aplica un cuestionario por área con
 El usuario revisa, ajusta y confirma. El diagnóstico queda como **baseline** del sistema — se actualiza en cada Weekly Review o cuando el usuario decide repetir el diagnóstico.
 
 **Módulo 1 — Áreas de Vida:**
-
-Las 8 áreas se estructuran en dos grupos funcionales de la jerarquía Maslow ampliada:
-
-**D-Needs (Necesidades de Carencia)** — déficit motiva, satisfacción elimina tensión:
-
-```
-Nivel 1 — Fisiológica (Homeostasis y Supervivencia)
-          sueño/descanso, nutrición, hidratación, movimiento, refugio, salud básica
-Nivel 2 — Seguridad (Protección y Estabilidad)
-          salud física/mental, finanzas, empleo, vivienda, orden y estructura
-Nivel 3 — Conexión Social (Pertenencia/Amor)
-          pareja, familia, amigos, comunidad, intimidad emocional, aceptación
-Nivel 4 — Estima (Reconocimiento y Valor)
-          logros, reconocimiento externo, autoeficacia, reputación, autonomía
-```
-
-**B-Needs (Necesidades de Crecimiento)** — motivación intrínseca, nunca se agotan completamente:
-
-```
-Nivel 5 — Cognitiva (Conocimiento y Comprensión)
-          aprendizaje continuo, creatividad, pensamiento crítico, resolución de problemas
-Nivel 6 — Estética (Belleza y Armonía)
-          arte, naturaleza, orden del entorno, expresión creativa, experiencias estéticas
-Nivel 7 — Autorrealización (Potencial Máximo)
-          propósito, misión personal, crecimiento continuo, vivir según valores propios
-Nivel 8 — Autotrascendencia (Más Allá del Yo)
-          legado, servicio a otros, causas mayores, conexión espiritual, contribución
-```
-
-**Condiciones de Contexto (prerrequisitos ambientales):**
-
-```
-- Libertad y Autonomía (capacidad de elegir sin coacción)
-- Transparencia y Verdad (acceso a información confiable)
-- Ambiente Eupsíquico (cultura positiva, entorno social sano)
-- Desafío Adecuado (estimulación óptima — ni aburrimiento ni abrumamiento)
-```
-
-**Sistema de Scoring:**
-
-- Score por área: 0-100% (actualizado desde diagnóstico + time tracking)
-- **Life System Health Score global** = promedio ponderado con multiplicadores por nivel:
-  - Niveles 1-2 (D-Needs críticos): **2.0×** — base de supervivencia
-  - Niveles 3-4 (D-Needs sociales): **1.5×** — conexión y reconocimiento
-  - Niveles 5-6 (B-Needs tempranos): **1.2×** — crecimiento cognitivo/estético
-  - Niveles 7-8 (B-Needs avanzados): **1.0×** — autorrealización y trascendencia
-- Tendencia visual por área: mejorando / estable / deteriorando
-
-**Reglas de Validación del Sistema:**
-
-- ❌ Bloquear soft OKRs de nivel 7-8 si algún área nivel 1-2 tiene score <50% por >14 días
-- ⚠️ Alerta crítica: área nivel 1-2 sin actividad >7 días
-- ⚠️ Alerta desbalance: >80% del tiempo en 1-2 áreas por >14 días
-- 💡 Sugerencia automática de balanceo: el sistema prioriza D-Needs sobre B-Needs en recomendaciones
+- 8 áreas predefinidas basadas en Maslow, editables en nombre/descripción
+- Score por área (%) visible — actualizado desde diagnóstico y time tracking
+- Visualización de tendencia: ¿el área está mejorando o deteriorándose?
+- Alerta si un área sin actividad por > 7 días
 
 **Módulo 2 — OKRs:**
 
 Estructura jerárquica confirmada:
-
 ```
 VISIÓN 5 AÑOS (narrativa aspiracional — sin KRs)
   └─ OKR ANUAL (máximo 3 activos — 5/25 Rule)
@@ -399,61 +342,19 @@ VISIÓN 5 AÑOS (narrativa aspiracional — sin KRs)
 - **Máximo 3 OKRs anuales activos** (5/25 Rule — los demás van a Backlog)
 - Cada OKR anual se descompone en **KRs trimestrales** (Q1/Q2/Q3/Q4)
 - **Progreso del KR: 100% automático — sin ingreso manual**
-  - KRs _time-based_ (ej: "invertir 100h en X") → se actualiza desde `time_entries` vinculados
-  - KRs _outcome-based_ (ej: "lanzar app en producción") → se activa por confirmación de hito (binario: logrado/no logrado, basado en actividades completadas vinculadas al KR)
+  - KRs *time-based* (ej: "invertir 100h en X") → se actualiza desde `time_entries` vinculados
+  - KRs *outcome-based* (ej: "lanzar app en producción") → se activa por confirmación de hito (binario: logrado/no logrado, basado en actividades completadas vinculadas al KR)
   - El progreso global del OKR = promedio ponderado automático de sus KRs
 
-**Módulo 3 — Proyectos, Workflows, Templates & Squads:**
+**Módulo 3 — Proyectos / Hábitos / Milestones:**
 
-El modelo de ejecución está inspirado en AIOS, unificando la gestión de vida con la ejecución humano+IA bajo el mismo paradigma:
+- **Proyectos:** título, descripción, área, OKR padre, estado, fecha límite. Las actividades del proyecto se ven y ejecutan desde la vista del proyecto y desde el calendario.
+- **Hábitos:** Calendarios automáticos — generan eventos recurrentes automáticamente. "Meditación 20min diaria" crea un bloque cada día en el calendario. Se confirma en el Daily Check-in.
+- **Milestones** *(reemplaza Sprints en MVP):* Periodo de ejecución con fecha inicio/fin y un objetivo claro. Las actividades de un proyecto se agrupan bajo un milestone. No requiere flujo Scrum completo — es un "sprint simplificado" con goal + lista de actividades + período. El Scrum completo (kanban, retrospectiva formal) queda para Phase 2.
 
-```
-PROYECTO (vehículo que ejecuta un KR)
-  └── WORKFLOW (flujo de trabajo del proyecto — modelado como AIOS workflow)
-       └── TASK (fase del workflow — secuencial o paralela)
-            └── STEP = ACTIVITY (unidad atómica verificable)
-                  ├── executor: human → se calendarizan automáticamente
-                  ├── executor: ai    → van a cola AIOS (agente asignado)
-                  └── executor: mixed → IA prepara, humano aprueba
-```
-
-**Activities espontáneas (no planeadas):** Existen sin workflow padre (ver Netflix, paseo espontáneo) pero siempre vinculadas a un Área. Alimentan el motor de correlaciones igual que las planeadas.
-
-**Templates de Workflow (AIOS-modeled):**
-
-- 8 templates predefinidos en MVP: Dev Sprint, Health Optimization, Learning Path, Content Creation, Financial Review, Habit Building, Product Launch, Custom
-- Modelados como AIOS workflows (JSON/YAML): pre-populan tasks, steps, executor_types y squad sugerido
-- Al crear proyecto → seleccionar template → workflow pre-configurado listo para ejecutar
-
-**Squads de Agentes:**
-
-- Un squad = grupo de agentes AIOS asignados a un workflow
-- Steps tipo `ai` heredan el agente correspondiente del squad
-- Squads predefinidos MVP:
-  - **Dev Squad:** @architect + @dev + @qa + @devops
-  - **Research Squad:** @analyst + @pm
-  - **Personal Coach:** @analyst (correlaciones + insights)
-
-**Visual Workflow Builder (React Flow / XY Flow):**
-
-- Canvas interactivo estilo n8n para construir y editar workflows visualmente
-- Nodos Task (rectángulos) y Step (círculos coloreados por executor_type)
-  - 🔵 Azul = human | 🟣 Púrpura = AI | 🔀 Degradado = mixed
-- Flechas muestran dependencias y secuencia de ejecución
-- Squad asignado visible en nodos AI
-- Status de ejecución en tiempo real sobre cada nodo
-- Phase 2: exportar workflow como AIOS YAML para ejecución directa
-
-**Hábitos:**
-
-- Activities recurrentes generadas con rrule (RFC 5545)
-- Detección emergente: el sistema identifica patrones de activities repetidas y alerta: "Llevas 18 días haciendo esto — ¿convertirlo en hábito consciente?"
-- Confirmados en Daily Check-in
-
-**Regla de vinculación:** Toda activity (planeada o espontánea) debe pertenecer a **al menos un Área de vida**. Sin excepción — garantiza que los Informes de tiempo por área sean 100% completos.
+**Regla de vinculación:** Toda actividad debe pertenecer a **al menos un Área de vida**. No requiere OKR/Proyecto (ir al dentista → Área Fisiológica), pero el área es obligatoria para garantizar que los Informes de tiempo por área sean 100% completos.
 
 **Módulo 4 — Habilidades:**
-
 - Registro de skills activas (nombre + descripción)
 - Nivel actual: Beginner / Intermediate / Advanced / Expert
 - Tiempo total invertido — calculado automáticamente desde `time_entries` vinculados (un evento del calendario puede vincularse a una skill al crearlo o al registrar time)
@@ -462,36 +363,31 @@ PROYECTO (vehículo que ejecuta un KR)
 
 **Módulo 5 — Calendario:**
 
-_Tipos de calendario:_
-
+*Tipos de calendario:*
 - **Calendarios manuales:** el usuario crea eventos/tareas directamente
 - **Calendarios automáticos:** generan eventos recurrentes por regla. Ejemplo: "Sueño — 8h diarias" genera automáticamente un bloque cada noche. Al día siguiente, el Daily Check-in confirma el tiempo real.
 
-_Vistas (todas en MVP):_
-
+*Vistas (todas en MVP):*
 - **Año:** grid de 365 días con indicador visual por día (punto/color si hay actividades). Al presionar un día → abre vista Día.
 - **Mes:** grid mensual con indicador por día. Al presionar un día → abre vista Día.
 - **Semana:** columnas de 7 días con indicador por día. Al presionar un día → abre vista Día. Incluye **Time Budget semanal**.
 - **Día (vista principal):** Timeline por horas. Cada actividad con: horario, estado, contexto (hábito/proyecto/milestone), botones de acción directa. **Time Budget diario visible:** "X horas comprometidas / Y disponibles".
 - **Agenda:** lista cronológica de próximas actividades sin grid.
 
-_Justificación de todas las vistas en MVP:_ Cada vista permite una perspectiva distinta del sistema (macro→micro: Año=consistencia anual, Mes=balance mensual, Semana=planificación táctica, Día=ejecución, Agenda=próximos compromisos). Implementarlas desde el inicio evita refactoring estructural posterior.
+*Justificación de todas las vistas en MVP:* Cada vista permite una perspectiva distinta del sistema (macro→micro: Año=consistencia anual, Mes=balance mensual, Semana=planificación táctica, Día=ejecución, Agenda=próximos compromisos). Implementarlas desde el inicio evita refactoring estructural posterior.
 
-_Time Budget (Presupuesto de Tiempo):_
-
+*Time Budget (Presupuesto de Tiempo):*
 - Visible en vista Día y Semana
 - Calcula: horas de actividades comprometidas vs. horas disponibles en el día/semana
 - Alerta visual si el día está sobre-comprometido (overcommitment)
 - Permite planificación honesta: "Ya tengo 7h comprometidas — ¿agrego 2h más?"
 
-_Eventos y tareas:_
-
+*Eventos y tareas:*
 - **Eventos:** bloque de tiempo con hora inicio/fin. Recurrencia configurable (diario, semanal, mensual, personalizado con `rrule`).
 - **Tareas:** sin hora fija, aparecen en barra lateral del día. Con fecha de vencimiento y recurrencia.
 - **Estado "Pospuesto":** cuando una actividad no se completa, puede marcarse como Pospuesta con nueva fecha asignada (no solo "fallida") — diferencia crítica para datos de consistency.
 
-_Time tracking (start/stop explícito):_
-
+*Time tracking (start/stop explícito):*
 - Al iniciar una actividad → el sistema registra `started_at`
 - Al terminar → registra `ended_at`, calcula duración real automáticamente
 - Si se **pausa** → registra motivo de pausa y tiempo acumulado hasta ese momento
@@ -519,7 +415,6 @@ Para cada actividad pendiente:
 El check-in es **no omitible** — es el mecanismo central de accountability. El banner persiste en el Home hasta completarse. Si el usuario cierra la app sin completarlo, reaparece en el próximo login. Los datos capturados alimentan el motor de correlaciones y los Informes.
 
 **Módulo 6 — Inbox:**
-
 - Captura rápida (shortcut global o botón prominente): texto libre sin estructura obligatoria
 - **Procesamiento con IA:**
   - La IA clasifica el item (tarea / evento / proyecto / hábito / idea)
@@ -560,8 +455,7 @@ Flujo guiado disponible desde el Home o Inbox — activado idealmente cada domin
 
 **Módulo 7 — Informes & Analytics + Motor de Correlaciones:**
 
-_Reportes básicos (MVP):_
-
+*Reportes básicos (MVP):*
 - **Time by Area:** tiempo total por área Maslow en período seleccionable (semana/mes/trimestre)
 - **Time by Project:** top proyectos por tiempo invertido
 - **Habit Consistency:** tabla de streaks y % de cumplimiento por hábito
@@ -569,7 +463,7 @@ _Reportes básicos (MVP):_
 - **OKR Progress:** estado visual de todos los OKRs activos y sus KRs (calculado automáticamente)
 - **Area Health Trend:** evolución del score % por área a lo largo del tiempo
 
-_Motor de Correlaciones (MVP — diferenciador core):_
+*Motor de Correlaciones (MVP — diferenciador core):*
 
 El sistema analiza patrones entre variables de ejecución para detectar qué potencia y qué daña el rendimiento del usuario:
 
@@ -604,7 +498,6 @@ La IA analiza los `time_entries`, `checkin_responses` y `habit_completions` para
 ### MVP Success Criteria
 
 El MVP es exitoso si el creador:
-
 1. Usa el Calendario de life-os como su única agenda (reemplaza Google Calendar)
 2. Completa el Daily Check-in ≥ 5 días por semana
 3. Realiza el Weekly Review ≥ 3 semanas consecutivas
@@ -654,11 +547,9 @@ life-os como SaaS para "sistemas-pensadores" — individuos técnicos frustrados
 - **Autenticación:** Supabase Auth — magic link o email/password (single user MVP)
 - **ORM/Query:** Drizzle ORM o Supabase JS Client directo (decisión @architect)
 - **Estado global:** Zustand
-- **Calendario UI:** `big-calendar` (github.com/lramos33/big-calendar, MIT) — 5 vistas exactas (Año/Mes/Semana/Día/Agenda), shadcn/ui, drag&drop, time indicator. Adaptar: Tailwind v3→v4 + `rrule` separado para recurrencia
-- **Layout / Dashboard base:** `TailAdmin` (github.com/TailAdmin/free-nextjs-admin-dashboard, MIT) — Next.js 16 + React 19 + Tailwind v4 nativo, ApexCharts, sidebar, dark mode. Base para Home, Informes y estructura general
+- **Calendario UI:** Librería por decidir — `fullcalendar-react` (preferido por recurrencia nativa) o `react-big-calendar` (decisión crítica antes de construir el módulo)
 - **Charts/Analytics:** Recharts o Nivo para informes
 - **Recurrencia:** `rrule` (RFC 5545) para eventos recurrentes
-- **Testing:** Vitest + React Testing Library (unit/integration) — configuración base en Story 1.6 (E1)
 - **Hosting:** Vercel (free tier suficiente para MVP single-user)
 
 ### Arquitectura de IA — Multi-Proveedor (Agnóstica de Vendor)
@@ -809,7 +700,7 @@ correlation_insights (id, detected_at, variable_a, variable_b,
 
 ### Open Questions
 
-- ~~**¿Qué librería de calendario?**~~ ✅ **CERRADA:** `big-calendar` (lramos33) + `rrule` separado. `TailAdmin` como base de layout/dashboard.
+- **¿Qué librería de calendario?** FullCalendar (open source con recurrencia nativa), react-big-calendar, o custom CSS Grid. **Decisión crítica antes de cualquier desarrollo.**
 - **¿Cómo se calculan correlaciones con pocos datos?** ¿Pearson simple o se necesita algo más robusto? ¿Qué umbral mínimo de confianza se muestra al usuario?
 - **¿Cuántas ocurrencias futuras se pre-generan para hábitos?** Opciones: ninguna (on-the-fly), 30 días, 90 días. Impacta performance y complejidad del schema.
 - **¿Qué modelo IA por defecto para MVP?** Claude Haiku (rápido/barato) vs. Claude Sonnet (mejor análisis) para diagnóstico y correlaciones.
@@ -847,19 +738,19 @@ life-os/
 
 ### B. Frameworks Integrados
 
-| #   | Framework                            | Módulo                               | Propósito                                                                                                  |
-| --- | ------------------------------------ | ------------------------------------ | ---------------------------------------------------------------------------------------------------------- |
-| 1   | Maslow 8 Niveles (D-Needs + B-Needs) | Áreas + Perfil                       | Estructura base, scoring ponderado (2.0×/1.5×/1.2×/1.0×), validaciones jerárquicas, diagnóstico científico |
-| 2   | OKRs                                 | OKRs                                 | Planificación 5Y → Anual → Trimestral, progreso automático                                                 |
-| 3   | GTD                                  | Inbox + Weekly Review                | Captura, filtro IA, organización, revisión semanal                                                         |
-| 4   | Design Sprint                        | Proyectos                            | Proyectos de alta incertidumbre (Phase 2)                                                                  |
-| 5   | Scrum Sprint                         | Milestones (MVP) → Sprints (Phase 2) | Ejecución iterativa con sprint goal                                                                        |
-| 6   | Atomic Habits                        | Hábitos                              | 4 leyes + streak + never-miss-twice                                                                        |
-| 7   | Eisenhower                           | Tareas/Eventos                       | Q1/Q2/Q3/Q4 tagging para análisis de tiempo                                                                |
-| 8   | Pareto 80/20                         | Correlaciones + Informes             | Identificar el 20% de actividades de mayor impacto                                                         |
-| 9   | Buffett 5/25                         | OKRs                                 | Máximo 3 OKRs activos, foco radical                                                                        |
-| 10  | Cronobiología                        | Calendario (Phase 2)                 | Ventanas de energía óptimas para scheduling                                                                |
-| 11  | PARA Method                          | Inbox + Áreas                        | Projects/Areas/Resources/Archive como estructura                                                           |
+| # | Framework | Módulo | Propósito |
+|---|-----------|--------|-----------|
+| 1 | Maslow 8 Niveles | Áreas + Perfil | Estructura base, diagnóstico científico, priorización |
+| 2 | OKRs | OKRs | Planificación 5Y → Anual → Trimestral, progreso automático |
+| 3 | GTD | Inbox + Weekly Review | Captura, filtro IA, organización, revisión semanal |
+| 4 | Design Sprint | Proyectos | Proyectos de alta incertidumbre (Phase 2) |
+| 5 | Scrum Sprint | Milestones (MVP) → Sprints (Phase 2) | Ejecución iterativa con sprint goal |
+| 6 | Atomic Habits | Hábitos | 4 leyes + streak + never-miss-twice |
+| 7 | Eisenhower | Tareas/Eventos | Q1/Q2/Q3/Q4 tagging para análisis de tiempo |
+| 8 | Pareto 80/20 | Correlaciones + Informes | Identificar el 20% de actividades de mayor impacto |
+| 9 | Buffett 5/25 | OKRs | Máximo 3 OKRs activos, foco radical |
+| 10 | Cronobiología | Calendario (Phase 2) | Ventanas de energía óptimas para scheduling |
+| 11 | PARA Method | Inbox + Áreas | Projects/Areas/Resources/Archive como estructura |
 
 ### C. Stack Técnico Confirmado
 
@@ -911,5 +802,5 @@ Este Project Brief v1.5 provee el contexto completo para life-os: 8 módulos, st
 
 ---
 
-_— Atlas, investigando a verdade 🔎_
-_Draft v1.5 · 2026-02-18 · AIOS Analyst Agent — Multi-IA + Correlaciones + Diagnóstico científico + KR automático_
+*— Atlas, investigando a verdade 🔎*
+*Draft v1.5 · 2026-02-18 · AIOS Analyst Agent — Multi-IA + Correlaciones + Diagnóstico científico + KR automático*
