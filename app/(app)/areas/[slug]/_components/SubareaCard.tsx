@@ -128,6 +128,11 @@ export function SubareaCard({ subarea, decayThresholdDays = 7 }: SubareaCardProp
             Opcional
           </span>
         )}
+        {subarea.sources.length === 0 && (
+          <span className="rounded-full bg-blue-100 dark:bg-blue-950/30 px-2 py-0.5 text-[10px] text-blue-600 dark:text-blue-400">
+            Autopercepción inicial
+          </span>
+        )}
         {hasDecay && minDays !== null && (
           <span className="rounded-full bg-orange-100 dark:bg-orange-950/30 px-2 py-0.5 text-[10px] text-orange-600 dark:text-orange-400">
             ⚠ Sin actividad {minDays} día{minDays !== 1 ? 's' : ''}
